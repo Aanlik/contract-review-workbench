@@ -155,6 +155,7 @@ class ReviewRunService:
         contract_date = self._extract_date_hit(contract_materials, ["合同签订日期", "签订日期", "签署日期"])
         legal_review_date = self._extract_date_hit(flow_materials, ["法务审核", "法审", "法律审核"])
         approval_date = self._extract_date_hit(flow_materials, ["审批通过", "签批", "批准"])
+        flow_text = "\n".join(item.text for item in flow_materials)
         created: list[Issue] = []
 
         if contract_date and legal_review_date and legal_review_date.value > contract_date.value:
@@ -182,6 +183,34 @@ class ReviewRunService:
                     suggestion="请核对审批通过节点和签署页日期，如属实应提交流程异常说明并补齐审批依据。",
                     evidence_text=f"合同签订日期：{contract_date.value.isoformat()}；审批通过日期：{approval_date.value.isoformat()}",
                     evidence_sources=[contract_date.source, approval_date.source],
+                )
+            )
+
+        if contract_date and flow_text.strip() and not legal_review_date:
+            created.append(
+                self._create_issue(
+                    review_case,
+                    issue_type="process_audit",
+                    title="未识别到法务审核记录",
+                    risk_level="medium",
+                    description="已识别到合同签订日期和流程材料，但未抽取到明确法务审核日期或法审节点，存在法审依据缺失风险。",
+                    suggestion="请核对 OA 签报、法审意见或审批单，补充上传包含法审节点的材料，或由法务人工确认无需法审的制度依据。",
+                    evidence_text="流程材料未识别到法务审核记录",
+                    evidence_sources=self._first_blocks(flow_materials),
+                )
+            )
+
+        if contract_date and flow_text.strip() and not approval_date:
+            created.append(
+                self._create_issue(
+                    review_case,
+                    issue_type="process_audit",
+                    title="未识别到最终审批通过记录",
+                    risk_level="high",
+                    description="已识别到合同签订日期和流程材料，但未抽取到明确审批通过或签批完成节点，存在未完成审批即签署的内控风险。",
+                    suggestion="请核对最终审批节点、签批单或会议决议，确认合同签署前审批已完成。",
+                    evidence_text="流程材料未识别到最终审批通过记录",
+                    evidence_sources=self._first_blocks(flow_materials),
                 )
             )
 
@@ -296,6 +325,9 @@ class ReviewRunService:
             for block in material.blocks
             if text in block.text
         ]
+
+    def _first_blocks(self, materials: list[MaterialText]) -> list[MaterialBlock]:
+        return [material.blocks[0] for material in materials if material.blocks]
 
     def _extract_date(self, text: str, labels: list[str]) -> date | None:
         hit = self._extract_date_from_text(text, labels, None)

@@ -32,3 +32,17 @@ def test_soft_delete_case_hides_from_list(db_session):
     assert response.status_code == 204
     cases = client.get("/api/cases").json()
     assert all(item["id"] != created["id"] for item in cases)
+
+
+def test_delete_case_can_remove_local_files(db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.storage_root", tmp_path)
+    client = make_client(db_session)
+    created = client.post("/api/cases", json={"title": "清理文件合同"}).json()
+    case_dir = tmp_path / "cases" / str(created["id"])
+    case_dir.mkdir(parents=True)
+    (case_dir / "contract.txt").write_text("合同原文", encoding="utf-8")
+
+    response = client.delete(f"/api/cases/{created['id']}?delete_files=true")
+
+    assert response.status_code == 204
+    assert not case_dir.exists()

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 from uuid import uuid4
 
 from fastapi import UploadFile
@@ -43,3 +44,8 @@ class StorageService:
             path=target_path,
             size_bytes=len(contents),
         )
+
+    def delete_case_files(self, case_id: int) -> None:
+        case_dir = self.root / "cases" / str(case_id)
+        if case_dir.exists():
+            shutil.rmtree(case_dir)

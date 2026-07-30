@@ -56,6 +56,11 @@ def test_reanalyze_creates_new_version_and_seed_issues(db_session, tmp_path):
     assert "法审日期晚于合同签订日期" in titles
     assert "合同签订日期早于审批通过日期" in titles
 
+    versions = client.get(f"/api/cases/{review_case.id}/versions").json()
+    assert versions[0]["version_number"] == 2
+    assert versions[0]["trigger"] == "reanalyze"
+    assert versions[0]["review_request"] == "重点看流程"
+
 
 def test_reanalyze_uses_configured_ai_to_create_contract_risk(db_session, tmp_path, monkeypatch):
     review_case = ReviewCase(title="AI 合同审查")
@@ -141,6 +146,44 @@ def test_reanalyze_flags_scanned_contract_when_text_is_unavailable(db_session, t
     assert response.status_code == 201
     issues = client.get(f"/api/cases/{review_case.id}/issues").json()
     assert any(issue["title"] == "合同扫描件 OCR 未完成" for issue in issues)
+
+
+def test_reanalyze_flags_missing_legal_review_and_final_approval(db_session, tmp_path):
+    review_case = ReviewCase(title="缺少签批合同")
+    db_session.add(review_case)
+    db_session.commit()
+    db_session.refresh(review_case)
+    contract = tmp_path / "contract.txt"
+    contract.write_text("合同签订日期：2026年7月18日\n甲方盖章：有\n乙方盖章：有", encoding="utf-8")
+    sign_report = tmp_path / "sign.txt"
+    sign_report.write_text("经办人提交：2026年7月17日\n未见法审或审批通过节点", encoding="utf-8")
+    db_session.add_all(
+        [
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="contract",
+                file_name="contract.txt",
+                original_path=str(contract),
+                parse_status="uploaded",
+            ),
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="sign_report",
+                file_name="sign.txt",
+                original_path=str(sign_report),
+                parse_status="uploaded",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    client = make_client(db_session)
+    response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "流程审计"})
+    assert response.status_code == 201
+    issues = client.get(f"/api/cases/{review_case.id}/issues").json()
+    titles = {issue["title"] for issue in issues}
+    assert "未识别到法务审核记录" in titles
+    assert "未识别到最终审批通过记录" in titles
 
 
 def test_reanalyze_uses_persisted_ocr_blocks_when_source_file_is_missing(db_session, tmp_path):

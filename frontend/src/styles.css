@@ -505,6 +505,18 @@ textarea:focus {
   white-space: pre-wrap;
 }
 
+.page-text p.evidence-highlight {
+  background: #fff8d7;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  color: #1b2a22;
+  padding: 2px 4px;
+  text-decoration: underline;
+  text-decoration-color: #b47a16;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
 .evidence-card small {
   color: #6d5a22;
 }

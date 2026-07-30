@@ -28,6 +28,19 @@ class ReviewCaseRead(BaseModel):
     updated_at: datetime
 
 
+class ReviewVersionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    case_id: int
+    version_number: int
+    trigger: str
+    ai_config_summary: dict | None
+    review_request: str | None
+    note: str | None
+    created_at: datetime
+
+
 class UploadedFileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

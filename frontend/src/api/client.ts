@@ -8,6 +8,8 @@ import type {
   IssueUpdatePayload,
   ManualIssuePayload,
   ReviewCase,
+  ReviewVersion,
+  SystemSettings,
   UploadedFile,
 } from "./types";
 
@@ -145,8 +147,8 @@ export async function updateCase(
   return fromSnakeCaseCase(await parseJsonResponse(response));
 }
 
-export async function deleteCase(caseId: number): Promise<void> {
-  const response = await fetch(`${API_BASE}/cases/${caseId}`, { method: "DELETE" });
+export async function deleteCase(caseId: number, deleteFiles = false): Promise<void> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}?delete_files=${deleteFiles}`, { method: "DELETE" });
   if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
 }
 
@@ -280,14 +282,32 @@ export async function sendIssueChat(
   return fromSnakeCaseConversation(await parseJsonResponse(response));
 }
 
-export async function exportCase(caseId: number): Promise<{ filePath: string }> {
+export async function exportCase(
+  caseId: number,
+  scope: "final" | "all" | "high_and_medium" | "confirmed" = "final",
+  format: "markdown" | "docx" | "pdf" = "markdown",
+): Promise<{ filePath: string }> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/exports`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ format: "markdown", scope: "final", include_ai_summary: false }),
+    body: JSON.stringify({ format, scope, include_ai_summary: false }),
   });
   const data = await parseJsonResponse(response);
   return { filePath: data.file_path };
+}
+
+export async function listCaseVersions(caseId: number): Promise<ReviewVersion[]> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/versions`);
+  const data = await parseJsonResponse(response);
+  return data.map((item: any) => ({
+    id: item.id,
+    caseId: item.case_id,
+    versionNumber: item.version_number,
+    trigger: item.trigger,
+    reviewRequest: item.review_request,
+    note: item.note,
+    createdAt: item.created_at,
+  }));
 }
 
 export async function getAiSettings(): Promise<AiSettings | null> {
@@ -343,5 +363,30 @@ export async function testAiSettings(payload: AiSettings): Promise<AiConnectionT
     model: data.model,
     message: data.message,
     latencyMs: data.latency_ms,
+  };
+}
+
+export async function getSystemSettings(): Promise<SystemSettings> {
+  const response = await fetch(`${API_BASE}/settings/system`);
+  const data = await parseJsonResponse(response);
+  return {
+    ocrEngine: data.ocr_engine,
+    storageRoot: data.storage_root,
+  };
+}
+
+export async function saveSystemSettings(payload: SystemSettings): Promise<SystemSettings> {
+  const response = await fetch(`${API_BASE}/settings/system`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ocr_engine: payload.ocrEngine,
+      storage_root: payload.storageRoot,
+    }),
+  });
+  const data = await parseJsonResponse(response);
+  return {
+    ocrEngine: data.ocr_engine,
+    storageRoot: data.storage_root,
   };
 }

@@ -1,4 +1,6 @@
 from app.services.ai_provider import build_contract_review_prompt
+from app.schemas.settings import AiSettings
+from app.services.ai_provider import OpenAICompatibleProvider
 
 
 def test_contract_review_prompt_requires_structured_json():
@@ -8,3 +10,44 @@ def test_contract_review_prompt_requires_structured_json():
     assert "JSON" in joined
     assert "风险等级" in joined
     assert "甲方不得解除合同" in joined
+
+
+def test_mimo_provider_uses_api_key_header(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def post(self, url, headers, json):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.ai_provider.httpx.Client", FakeClient)
+    provider = OpenAICompatibleProvider(
+        AiSettings(
+            base_url="https://api.xiaomimimo.com/v1",
+            api_key="sk-mimo",
+            model="mimo-v2.5-pro",
+        )
+    )
+
+    assert provider.chat([{"role": "user", "content": "hello"}]) == "ok"
+    assert captured["url"] == "https://api.xiaomimimo.com/v1/chat/completions"
+    assert captured["headers"]["api-key"] == "sk-mimo"
+    assert "Authorization" not in captured["headers"]

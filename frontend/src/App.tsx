@@ -37,8 +37,9 @@ export default function App() {
   }
 
   async function handleDelete(caseId: number) {
-    if (!window.confirm("确认删除这条审核记录吗？本操作会从列表隐藏该记录，原始材料清理将在后续版本提供独立选项。")) return;
-    await deleteCase(caseId);
+    if (!window.confirm("确认删除这条审核记录吗？")) return;
+    const deleteFiles = window.confirm("是否同时删除该记录的本地上传文件、OCR 中间结果和导出材料？");
+    await deleteCase(caseId, deleteFiles);
     refreshCases();
   }
 
@@ -52,7 +53,18 @@ export default function App() {
   }
 
   async function handleExport(caseId: number) {
-    const result = await exportCase(caseId);
+    const scope = window.prompt(
+      "请选择导出范围：final / all / high_and_medium / confirmed",
+      "final",
+    ) as "final" | "all" | "high_and_medium" | "confirmed" | null;
+    if (!scope) return;
+    const format = window.prompt("请选择导出格式：markdown / docx / pdf", "markdown") as
+      | "markdown"
+      | "docx"
+      | "pdf"
+      | null;
+    if (!format) return;
+    const result = await exportCase(caseId, scope, format);
     window.alert(`报告已导出：${result.filePath}`);
   }
 

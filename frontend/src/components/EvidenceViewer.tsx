@@ -24,6 +24,12 @@ function EvidenceCard({ evidence }: { evidence: EvidenceRef }) {
 export function EvidenceViewer({ documents, files, issue, onCreateManualIssue }: EvidenceViewerProps) {
   const [evidenceText, setEvidenceText] = useState("");
   const [title, setTitle] = useState("人工新增问题");
+  const highlightedBlockIds = new Set(
+    issue?.evidenceRefs
+      ?.map((evidence) => evidence.ocrBlockId)
+      .filter((id): id is number => typeof id === "number") ?? [],
+  );
+  const evidenceTexts = issue?.evidenceRefs?.map((evidence) => evidence.originalText).filter(Boolean) ?? [];
 
   return (
     <div>
@@ -85,7 +91,18 @@ export function EvidenceViewer({ documents, files, issue, onCreateManualIssue }:
                   <div className="page-text" key={page.id}>
                     <b>第 {page.pageNumber} 页</b>
                     {page.blocks.map((block) => (
-                      <p key={block.id}>{block.text}</p>
+                      <p
+                        className={
+                          highlightedBlockIds.has(block.id) ||
+                          evidenceTexts.some((text) => text && block.text.includes(text))
+                            ? "evidence-highlight"
+                            : ""
+                        }
+                        data-testid={`evidence-block-${block.id}`}
+                        key={block.id}
+                      >
+                        {block.text}
+                      </p>
                     ))}
                   </div>
                 ))

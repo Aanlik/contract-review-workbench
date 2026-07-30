@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_session
+from app.core.storage import StorageService
 from app.models.review import ReviewCase
 from app.schemas.review import ReviewCaseCreate, ReviewCaseRead, ReviewCaseUpdate
 
@@ -58,8 +59,14 @@ def update_case(
 
 
 @router.delete("/{case_id}", status_code=204)
-def delete_case(case_id: int, session: Session = Depends(get_session)):
+def delete_case(
+    case_id: int,
+    delete_files: bool = False,
+    session: Session = Depends(get_session),
+):
     review_case = get_active_case(case_id, session)
     review_case.deleted_at = datetime.now(UTC)
+    if delete_files:
+        StorageService().delete_case_files(case_id)
     session.commit()
     return Response(status_code=204)

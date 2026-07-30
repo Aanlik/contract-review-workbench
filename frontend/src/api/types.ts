@@ -10,6 +10,16 @@ export type ReviewCase = {
   updatedAt: string;
 };
 
+export type ReviewVersion = {
+  id: number;
+  caseId: number;
+  versionNumber: number;
+  trigger: string;
+  reviewRequest: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
 export type UploadedFile = {
   id: number;
   caseId: number;
@@ -119,4 +129,9 @@ export type AiConnectionTestResult = {
   model: string;
   message: string;
   latencyMs: number;
+};
+
+export type SystemSettings = {
+  ocrEngine: "paddleocr" | "rapidocr";
+  storageRoot: string;
 };

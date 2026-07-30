@@ -2,14 +2,14 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.models.review import DocumentPage, OcrBlock, UploadedFile
-from app.services.document_parser import DocumentParser
+from app.models.review import AppSetting, DocumentPage, OcrBlock, UploadedFile
+from app.services.document_parser import DocumentParser, PaddleOcrProvider, RapidOcrProvider
 
 
 class FileIngestService:
     def __init__(self, session: Session, parser: DocumentParser | None = None) -> None:
         self.session = session
-        self.parser = parser or DocumentParser()
+        self.parser = parser or DocumentParser(ocr_provider=self._ocr_provider())
 
     def ingest(self, uploaded_file_id: int) -> UploadedFile:
         uploaded = self.session.get(UploadedFile, uploaded_file_id)
@@ -20,7 +20,7 @@ class FileIngestService:
         try:
             parsed_pages = self.parser.extract_text(file_path, uploaded.file_type)
         except RuntimeError as exc:
-            if "PaddleOCR is not installed" not in str(exc):
+            if "OCR" not in str(exc):
                 raise
             uploaded.parse_method = "ocr"
             uploaded.parse_status = "needs_ocr"
@@ -56,6 +56,13 @@ class FileIngestService:
         self.session.commit()
         self.session.refresh(uploaded)
         return uploaded
+
+    def _ocr_provider(self):
+        setting = self.session.get(AppSetting, "system")
+        engine = (setting.value.get("ocr_engine") if setting else "paddleocr") or "paddleocr"
+        if engine == "rapidocr":
+            return RapidOcrProvider()
+        return PaddleOcrProvider()
 
     def _detect_parse_method(self, parsed_pages) -> str | None:
         sources = {block.source for page in parsed_pages for block in page.blocks}

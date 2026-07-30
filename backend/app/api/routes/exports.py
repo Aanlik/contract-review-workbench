@@ -11,8 +11,8 @@ router = APIRouter()
 
 
 class ExportRequest(BaseModel):
-    format: Literal["markdown"]
-    scope: Literal["final", "all", "high", "confirmed"] = "final"
+    format: Literal["markdown", "docx", "pdf"]
+    scope: Literal["final", "all", "high", "high_and_medium", "confirmed"] = "final"
     include_ai_summary: bool = False
 
 
@@ -31,9 +31,11 @@ def create_export(
     session: Session = Depends(get_session),
 ):
     try:
-        path = ExportService(session).export_markdown(
+        path = ExportService(session).export_report(
             case_id=case_id,
+            export_format=payload.format,
             include_ai_summary=payload.include_ai_summary,
+            scope=payload.scope,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -6,12 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_session
 from app.models.review import AppSetting
-from app.schemas.settings import AiConnectionTestResult, AiSettings
+from app.schemas.settings import AiConnectionTestResult, AiSettings, SystemSettings
 from app.services.ai_provider import OpenAICompatibleProvider
 
 router = APIRouter()
 
 _ai_settings: AiSettings | None = None
+_system_settings: SystemSettings | None = None
 
 
 @router.put("/ai", response_model=AiSettings)
@@ -39,6 +40,33 @@ def get_ai_settings(session: Session = Depends(get_session)):
         return None
     _ai_settings = AiSettings(**setting.value)
     return _ai_settings
+
+
+@router.put("/system", response_model=SystemSettings)
+def save_system_settings(payload: SystemSettings, session: Session = Depends(get_session)):
+    global _system_settings
+    _system_settings = payload
+    setting = session.get(AppSetting, "system")
+    value = payload.model_dump()
+    if setting is None:
+        setting = AppSetting(key="system", value=value)
+        session.add(setting)
+    else:
+        setting.value = value
+    session.commit()
+    return payload
+
+
+@router.get("/system", response_model=SystemSettings)
+def get_system_settings(session: Session = Depends(get_session)):
+    global _system_settings
+    if _system_settings is not None:
+        return _system_settings
+    setting = session.get(AppSetting, "system")
+    if setting is None:
+        return SystemSettings()
+    _system_settings = SystemSettings(**setting.value)
+    return _system_settings
 
 
 @router.post("/ai/test", response_model=AiConnectionTestResult)

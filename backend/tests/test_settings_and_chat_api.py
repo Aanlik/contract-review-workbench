@@ -35,6 +35,21 @@ def test_ai_settings_are_persisted_in_database(db_session):
     assert response.json() == payload
 
 
+def test_system_settings_are_persisted_in_database(db_session):
+    client = make_client(db_session)
+    payload = {
+        "ocr_engine": "rapidocr",
+        "storage_root": "/tmp/contract-review-storage",
+    }
+
+    assert client.put("/api/settings/system", json=payload).status_code == 200
+
+    fresh_client = make_client(db_session)
+    response = fresh_client.get("/api/settings/system")
+    assert response.status_code == 200
+    assert response.json() == payload
+
+
 def test_ai_settings_test_connection_uses_payload(db_session, monkeypatch):
     client = make_client(db_session)
     payload = {

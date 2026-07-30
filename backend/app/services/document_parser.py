@@ -24,9 +24,64 @@ class OcrProvider(Protocol):
 
 class PaddleOcrProvider:
     def recognize_page(self, image_path: Path) -> list[ParsedBlock]:
-        raise RuntimeError(
-            "PaddleOCR is not installed. Install the OCR extra before parsing scanned contracts."
-        )
+        try:
+            from paddleocr import PaddleOCR
+        except Exception as exc:
+            raise RuntimeError(
+                "PaddleOCR is not installed. Install the OCR extra before parsing scanned contracts."
+            ) from exc
+        engine = PaddleOCR(use_angle_cls=True, lang="ch")
+        result = engine.ocr(str(image_path), cls=True)
+        rows = result[0] if result and isinstance(result[0], list) else result
+        blocks: list[ParsedBlock] = []
+        for order_index, row in enumerate(rows or []):
+            bbox, payload = row
+            text, confidence = payload
+            blocks.append(
+                ParsedBlock(
+                    text=str(text),
+                    bbox=normalize_ocr_bbox(bbox),
+                    confidence=float(confidence),
+                    source="ocr",
+                    order_index=order_index,
+                )
+            )
+        return blocks
+
+
+class RapidOcrProvider:
+    def recognize_page(self, image_path: Path) -> list[ParsedBlock]:
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+        except Exception as exc:
+            raise RuntimeError(
+                "RapidOCR is not installed. Install rapidocr_onnxruntime before selecting RapidOCR."
+            ) from exc
+        engine = RapidOCR()
+        result, _ = engine(str(image_path))
+        return [
+            ParsedBlock(
+                text=str(text),
+                bbox=normalize_ocr_bbox(bbox),
+                confidence=float(confidence),
+                source="ocr",
+                order_index=order_index,
+            )
+            for order_index, (bbox, text, confidence) in enumerate(result or [])
+        ]
+
+
+def normalize_ocr_bbox(bbox) -> list[float] | None:
+    if bbox is None:
+        return None
+    if len(bbox) == 4 and all(isinstance(item, (int, float)) for item in bbox):
+        return [float(item) for item in bbox]
+    points = [point for point in bbox if len(point) >= 2]
+    if not points:
+        return None
+    xs = [float(point[0]) for point in points]
+    ys = [float(point[1]) for point in points]
+    return [min(xs), min(ys), max(xs), max(ys)]
 
 
 class DocumentParser:

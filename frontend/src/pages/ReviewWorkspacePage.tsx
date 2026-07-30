@@ -7,6 +7,7 @@ import {
   exportCase,
   getCaseChat,
   getIssueChat,
+  listCaseVersions,
   listCaseDocuments,
   listCaseFiles,
   listIssues,
@@ -134,8 +135,21 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   }
 
   async function handleExport() {
-    const result = await exportCase(caseId);
+    const result = await exportCase(caseId, "final", "markdown");
     setStatus(`报告已导出：${result.filePath}`);
+  }
+
+  async function handleShowVersions() {
+    const versions = await listCaseVersions(caseId);
+    if (!versions.length) {
+      setStatus("暂无审核版本记录。");
+      return;
+    }
+    setStatus(
+      versions
+        .map((version) => `V${version.versionNumber} ${version.trigger} ${version.reviewRequest ?? ""}`)
+        .join("；"),
+    );
   }
 
   return (
@@ -143,6 +157,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
       <div className="workspace-actions">
         <button onClick={handleReanalyze} type="button">整份合同重新审核</button>
         <button onClick={handleExport} type="button">导出报告</button>
+        <button onClick={handleShowVersions} type="button">查看版本</button>
         {status && <span>{status}</span>}
       </div>
       <section className="workspace-grid">

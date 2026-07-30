@@ -1,7 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 
-import { getAiSettings, saveAiSettings, testAiSettings } from "../api/client";
-import type { AiSettings } from "../api/types";
+import {
+  getAiSettings,
+  getSystemSettings,
+  saveAiSettings,
+  saveSystemSettings,
+  testAiSettings,
+} from "../api/client";
+import type { AiSettings, SystemSettings } from "../api/types";
 
 const emptySettings: AiSettings = {
   baseUrl: "",
@@ -13,8 +19,10 @@ const emptySettings: AiSettings = {
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<AiSettings>(emptySettings);
-  const [ocrEngine, setOcrEngine] = useState("paddleocr");
-  const [storagePath, setStoragePath] = useState("./data/storage");
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>({
+    ocrEngine: "paddleocr",
+    storageRoot: "./data/storage",
+  });
   const [status, setStatus] = useState("");
   const [isTesting, setIsTesting] = useState(false);
 
@@ -24,12 +32,16 @@ export function SettingsPage() {
         if (value) setSettings(value);
       })
       .catch(() => setStatus("尚未读取到 AI 配置。"));
+    getSystemSettings()
+      .then(setSystemSettings)
+      .catch(() => setStatus("尚未读取到系统配置。"));
   }, []);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     await saveAiSettings(settings);
-    setStatus("AI 配置已保存。");
+    await saveSystemSettings(systemSettings);
+    setStatus("AI、OCR 和本地存储配置已保存。");
   }
 
   async function handleTestConnection() {
@@ -127,14 +139,27 @@ export function SettingsPage() {
           </div>
           <label>
             OCR 引擎
-            <select onChange={(event) => setOcrEngine(event.target.value)} value={ocrEngine}>
+            <select
+              onChange={(event) =>
+                setSystemSettings((current) => ({
+                  ...current,
+                  ocrEngine: event.target.value as SystemSettings["ocrEngine"],
+                }))
+              }
+              value={systemSettings.ocrEngine}
+            >
               <option value="paddleocr">PaddleOCR（中文合同优先）</option>
               <option value="rapidocr">RapidOCR（轻量备选）</option>
             </select>
           </label>
           <label>
             本地存储位置
-            <input onChange={(event) => setStoragePath(event.target.value)} value={storagePath} />
+            <input
+              onChange={(event) =>
+                setSystemSettings((current) => ({ ...current, storageRoot: event.target.value }))
+              }
+              value={systemSettings.storageRoot}
+            />
           </label>
           <p className="helper-text">当前上传文件、OCR 中间结果和导出报告保存在本机，不会自动上传到 OA。</p>
         </div>

@@ -16,7 +16,7 @@ class OpenAICompatibleProvider:
 
     def chat(self, messages: list[ChatMessage]) -> str:
         url = f"{self.settings.base_url.rstrip('/')}/chat/completions"
-        headers = {"Authorization": f"Bearer {self.settings.api_key}"}
+        headers = self._headers()
         payload = {
             "model": self.settings.model,
             "messages": messages,
@@ -27,6 +27,11 @@ class OpenAICompatibleProvider:
             response.raise_for_status()
             data = response.json()
         return data["choices"][0]["message"]["content"]
+
+    def _headers(self) -> dict[str, str]:
+        if "xiaomimimo.com" in self.settings.base_url:
+            return {"api-key": self.settings.api_key}
+        return {"Authorization": f"Bearer {self.settings.api_key}"}
 
 
 def build_contract_review_prompt(contract_text: str, focus: str | None = None) -> list[ChatMessage]:

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -14,3 +16,8 @@ class AiConnectionTestResult(BaseModel):
     model: str
     message: str
     latency_ms: int
+
+
+class SystemSettings(BaseModel):
+    ocr_engine: Literal["paddleocr", "rapidocr"] = "paddleocr"
+    storage_root: str = "./data/storage"
