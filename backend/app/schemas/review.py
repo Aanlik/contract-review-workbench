@@ -25,3 +25,19 @@ class ReviewCaseRead(BaseModel):
     issue_count: int
     created_at: datetime
     updated_at: datetime
+
+
+class UploadedFileRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    case_id: int
+    file_type: str
+    file_name: str
+    original_path: str
+    content_type: str | None
+    size_bytes: int
+    page_count: int | None
+    parse_method: str | None
+    parse_status: str
+    uploaded_at: datetime

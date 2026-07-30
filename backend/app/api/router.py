@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import cases
+from app.api.routes import cases, files
 
 api_router = APIRouter()
 
@@ -11,3 +11,4 @@ def health() -> dict[str, str]:
 
 
 api_router.include_router(cases.router, prefix="/cases", tags=["cases"])
+api_router.include_router(files.router, tags=["files"])
