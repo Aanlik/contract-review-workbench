@@ -26,7 +26,7 @@ describe("EvidenceViewer", () => {
                   {
                     id: 9,
                     text: "甲方不得以任何理由解除本合同。",
-                    bbox: null,
+                    bbox: [10, 20, 300, 40],
                     confidence: 0.95,
                     orderIndex: 0,
                     source: "pdf_text",
@@ -61,6 +61,10 @@ describe("EvidenceViewer", () => {
       />,
     );
 
-    expect(screen.getByTestId("evidence-block-9").className).toContain("evidence-highlight");
+    // Block appears in both page preview and document text list
+    const blocks = screen.getAllByTestId("evidence-block-9");
+    expect(blocks.length).toBeGreaterThanOrEqual(1);
+    // At least one should be highlighted
+    expect(blocks.some((el) => el.className.includes("evidence-highlight"))).toBe(true);
   });
 });

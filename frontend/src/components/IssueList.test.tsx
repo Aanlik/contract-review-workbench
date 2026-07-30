@@ -17,6 +17,8 @@ describe("IssueList", () => {
             status: "pending",
           },
         ]}
+        onBatchDelete={() => {}}
+        onBatchUpdate={() => {}}
         onFilterChange={() => {}}
         selectedIssueId={1}
         onSelect={() => {}}

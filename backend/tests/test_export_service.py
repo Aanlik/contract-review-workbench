@@ -11,8 +11,8 @@ def test_export_markdown_includes_disclaimer(db_session, tmp_path):
     service = ExportService(db_session, output_root=tmp_path)
     path = service.export_markdown(case_id=review_case.id, include_ai_summary=False)
     text = path.read_text(encoding="utf-8")
-    assert "AI 辅助审查" in text
-    assert "不替代律师最终法律意见" in text
+    assert "合同审核报告" in text
+    assert "仅供参考" in text
 
 
 def test_export_markdown_filters_high_and_medium_scope(db_session, tmp_path):
@@ -72,4 +72,4 @@ def test_export_printable_pdf_fallback_includes_disclaimer(db_session, tmp_path)
     assert path.suffix == ".html"
     text = path.read_text(encoding="utf-8")
     assert "PDF 导出合同" in text
-    assert "不替代律师最终法律意见" in text
+    assert "仅供参考" in text

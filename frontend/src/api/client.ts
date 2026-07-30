@@ -3,6 +3,7 @@ import type {
   AiConnectionTestResult,
   AiSettings,
   CaseDocument,
+  CaseSearchParams,
   EvidenceRef,
   Issue,
   IssueUpdatePayload,
@@ -10,7 +11,9 @@ import type {
   ReviewCase,
   ReviewVersion,
   SystemSettings,
+  TaskStatus,
   UploadedFile,
+  VersionDiffResponse,
 } from "./types";
 
 const API_BASE = "/api";
@@ -120,8 +123,16 @@ async function parseJsonResponse(response: Response) {
   return response.json();
 }
 
-export async function listCases(): Promise<ReviewCase[]> {
-  const response = await fetch(`${API_BASE}/cases`);
+// Cases
+export async function listCases(params?: CaseSearchParams): Promise<ReviewCase[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.q) searchParams.set("q", params.q);
+  if (params?.status) searchParams.set("status", params.status);
+  if (params?.riskLevel) searchParams.set("risk_level", params.riskLevel);
+  if (params?.sortBy) searchParams.set("sort_by", params.sortBy);
+  if (params?.sortOrder) searchParams.set("sort_order", params.sortOrder);
+  const qs = searchParams.toString();
+  const response = await fetch(`${API_BASE}/cases${qs ? `?${qs}` : ""}`);
   const data = await parseJsonResponse(response);
   return data.map(fromSnakeCaseCase);
 }
@@ -152,19 +163,46 @@ export async function deleteCase(caseId: number, deleteFiles = false): Promise<v
   if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
 }
 
-export async function uploadCaseFile(
+// Files
+export type UploadProgressCallback = (percent: number) => void;
+
+export function uploadCaseFile(
   caseId: number,
   fileType: string,
   file: File,
+  onProgress?: UploadProgressCallback,
 ): Promise<UploadedFile> {
-  const data = new FormData();
-  data.append("file_type", fileType);
-  data.append("file", file);
-  const response = await fetch(`${API_BASE}/cases/${caseId}/files`, {
-    method: "POST",
-    body: data,
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append("file_type", fileType);
+    formData.append("file", file);
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(fromSnakeCaseFile(data));
+        } catch {
+          reject(new Error("Invalid response"));
+        }
+      } else {
+        reject(new Error(`Upload failed: ${xhr.status}`));
+      }
+    });
+
+    xhr.addEventListener("error", () => reject(new Error("Network error")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload aborted")));
+
+    xhr.open("POST", `${API_BASE}/cases/${caseId}/files`);
+    xhr.send(formData);
   });
-  return fromSnakeCaseFile(await parseJsonResponse(response));
 }
 
 export async function listCaseFiles(caseId: number): Promise<UploadedFile[]> {
@@ -179,16 +217,14 @@ export async function listCaseDocuments(caseId: number): Promise<CaseDocument[]>
   return data.map(fromSnakeCaseDocument);
 }
 
+// Issues
 export async function listIssues(caseId: number): Promise<Issue[]> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/issues`);
   const data = await parseJsonResponse(response);
   return data.map(fromSnakeCaseIssue);
 }
 
-export async function createManualIssue(
-  caseId: number,
-  payload: ManualIssuePayload,
-): Promise<Issue> {
+export async function createManualIssue(caseId: number, payload: ManualIssuePayload): Promise<Issue> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/issues/manual`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -204,17 +240,17 @@ export async function createManualIssue(
 }
 
 export async function updateIssue(issueId: number, payload: IssueUpdatePayload): Promise<Issue> {
+  const body: Record<string, unknown> = {};
+  if (payload.title !== undefined) body.title = payload.title;
+  if (payload.riskLevel !== undefined) body.risk_level = payload.riskLevel;
+  if (payload.description !== undefined) body.description = payload.description;
+  if (payload.suggestion !== undefined) body.suggestion = payload.suggestion;
+  if (payload.replacementClause !== undefined) body.replacement_clause = payload.replacementClause;
+  if (payload.status !== undefined) body.status = payload.status;
   const response = await fetch(`${API_BASE}/issues/${issueId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      title: payload.title,
-      risk_level: payload.riskLevel,
-      description: payload.description,
-      suggestion: payload.suggestion,
-      replacement_clause: payload.replacementClause,
-      status: payload.status,
-    }),
+    body: JSON.stringify(body),
   });
   return fromSnakeCaseIssue(await parseJsonResponse(response));
 }
@@ -222,7 +258,7 @@ export async function updateIssue(issueId: number, payload: IssueUpdatePayload):
 export async function applyAiMessageToIssue(
   issueId: number,
   messageId: number,
-  action: "update_suggestion" | "update_description" | "adjust_risk_level",
+  action: string,
 ): Promise<Issue> {
   const response = await fetch(`${API_BASE}/issues/${issueId}/apply-ai-message`, {
     method: "POST",
@@ -241,6 +277,33 @@ export async function applyAiMessageAsNewIssue(messageId: number): Promise<Issue
   return fromSnakeCaseIssue(await parseJsonResponse(response));
 }
 
+export async function batchUpdateIssues(
+  issueIds: number[],
+  updates: { status?: string; riskLevel?: string },
+): Promise<Issue[]> {
+  const response = await fetch(`${API_BASE}/issues/batch-update`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      issue_ids: issueIds,
+      status: updates.status,
+      risk_level: updates.riskLevel,
+    }),
+  });
+  const data = await parseJsonResponse(response);
+  return data.map(fromSnakeCaseIssue);
+}
+
+export async function batchDeleteIssues(issueIds: number[]): Promise<void> {
+  const response = await fetch(`${API_BASE}/issues/batch-delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ issue_ids: issueIds }),
+  });
+  if (!response.ok) throw new Error(`Batch delete failed: ${response.status}`);
+}
+
+// Review runs
 export async function reanalyzeCase(caseId: number, instruction?: string): Promise<ReviewCase> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/reanalyze`, {
     method: "POST",
@@ -250,6 +313,51 @@ export async function reanalyzeCase(caseId: number, instruction?: string): Promi
   return fromSnakeCaseCase(await parseJsonResponse(response));
 }
 
+export async function reanalyzeAsync(caseId: number, instruction?: string): Promise<{ taskId: string; caseId: number }> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/reanalyze-async`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  });
+  const data = await parseJsonResponse(response);
+  return { taskId: data.task_id, caseId: data.case_id };
+}
+
+export async function listCaseVersions(caseId: number): Promise<ReviewVersion[]> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/versions`);
+  const data = await parseJsonResponse(response);
+  return data.map((item: any) => ({
+    id: item.id,
+    caseId: item.case_id,
+    versionNumber: item.version_number,
+    trigger: item.trigger,
+    reviewRequest: item.review_request,
+    note: item.note,
+    createdAt: item.created_at,
+  }));
+}
+
+export async function diffVersions(caseId: number, versionA: number, versionB: number): Promise<VersionDiffResponse> {
+  const response = await fetch(
+    `${API_BASE}/cases/${caseId}/versions/diff?version_a=${versionA}&version_b=${versionB}`,
+  );
+  const data = await parseJsonResponse(response);
+  return {
+    versionA: data.version_a,
+    versionB: data.version_b,
+    changes: (data.changes ?? []).map((c: any) => ({
+      issueId: c.issue_id,
+      title: c.title,
+      changeType: c.change_type,
+      riskLevel: c.risk_level,
+      description: c.description,
+      oldRiskLevel: c.old_risk_level,
+    })),
+    summary: data.summary,
+  };
+}
+
+// AI Chat
 export async function getCaseChat(caseId: number): Promise<AiConversation> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/chat`);
   return fromSnakeCaseConversation(await parseJsonResponse(response));
@@ -282,34 +390,22 @@ export async function sendIssueChat(
   return fromSnakeCaseConversation(await parseJsonResponse(response));
 }
 
+// Exports
 export async function exportCase(
   caseId: number,
   scope: "final" | "all" | "high_and_medium" | "confirmed" = "final",
   format: "markdown" | "docx" | "pdf" = "markdown",
-): Promise<{ filePath: string }> {
+): Promise<{ filePath: string; fileName: string }> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/exports`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ format, scope, include_ai_summary: false }),
   });
   const data = await parseJsonResponse(response);
-  return { filePath: data.file_path };
+  return { filePath: data.file_path, fileName: data.file_name };
 }
 
-export async function listCaseVersions(caseId: number): Promise<ReviewVersion[]> {
-  const response = await fetch(`${API_BASE}/cases/${caseId}/versions`);
-  const data = await parseJsonResponse(response);
-  return data.map((item: any) => ({
-    id: item.id,
-    caseId: item.case_id,
-    versionNumber: item.version_number,
-    trigger: item.trigger,
-    reviewRequest: item.review_request,
-    note: item.note,
-    createdAt: item.created_at,
-  }));
-}
-
+// Settings
 export async function getAiSettings(): Promise<AiSettings | null> {
   const response = await fetch(`${API_BASE}/settings/ai`);
   const data = await parseJsonResponse(response);
@@ -395,4 +491,70 @@ export async function saveSystemSettings(payload: SystemSettings): Promise<Syste
     ocrDpi: data.ocr_dpi,
     preprocessImages: data.preprocess_images,
   };
+}
+
+// Tasks
+export async function listTasks(): Promise<TaskStatus[]> {
+  const response = await fetch(`${API_BASE}/tasks`);
+  const data = await parseJsonResponse(response);
+  return data.map((t: any) => ({
+    taskId: t.task_id,
+    status: t.status,
+    result: t.result,
+    error: t.error,
+    progress: t.progress,
+    progressPercent: t.progress_percent ?? 0,
+    currentStep: t.current_step ?? 0,
+    totalSteps: t.total_steps ?? 0,
+    createdAt: t.created_at,
+    startedAt: t.started_at,
+    finishedAt: t.finished_at,
+  }));
+}
+
+export async function getTask(taskId: string): Promise<TaskStatus> {
+  const response = await fetch(`${API_BASE}/tasks/${taskId}`);
+  const data = await parseJsonResponse(response);
+  return {
+    taskId: data.task_id,
+    status: data.status,
+    result: data.result,
+    error: data.error,
+    progress: data.progress,
+    progressPercent: data.progress_percent ?? 0,
+    currentStep: data.current_step ?? 0,
+    totalSteps: data.total_steps ?? 0,
+    createdAt: data.created_at,
+    startedAt: data.started_at,
+    finishedAt: data.finished_at,
+  };
+}
+
+
+export async function downloadExport(filePath: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/exports/download?file_path=${encodeURIComponent(filePath)}`);
+  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filePath.split("/").pop() || "export";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+// Audit Logs
+export async function getAuditLogs(params?: {
+  entityType?: string;
+  entityId?: number;
+  limit?: number;
+}): Promise<any[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.entityType) searchParams.set("entity_type", params.entityType);
+  if (params?.entityId) searchParams.set("entity_id", String(params.entityId));
+  if (params?.limit) searchParams.set("limit", String(params.limit));
+  const qs = searchParams.toString();
+  const response = await fetch(`${API_BASE}/audit/logs${qs ? `?${qs}` : ""}`);
+  return parseJsonResponse(response);
 }

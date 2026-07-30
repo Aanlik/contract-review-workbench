@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 
-import { deleteCase, exportCase, listCases, updateCase } from "./api/client";
-import type { ReviewCase } from "./api/types";
+import { deleteCase, downloadExport, exportCase, listCases, updateCase } from "./api/client";
+import type { CaseSearchParams, ReviewCase } from "./api/types";
 import { AppShell } from "./components/AppShell";
+import { ConfirmDialog, ExportDialog, RenameDialog } from "./components/Modal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { AuditLogPage } from "./pages/AuditLogPage";
 import { CasesPage } from "./pages/CasesPage";
 import { NewCasePage } from "./pages/NewCasePage";
 import { ReviewWorkspacePage } from "./pages/ReviewWorkspacePage";
@@ -15,14 +18,23 @@ export default function App() {
   const [selectedCaseId, setSelectedCaseId] = useState<number | undefined>(
     loadWorkspaceState().selectedCaseId,
   );
+  const [searchParams, setSearchParams] = useState<CaseSearchParams>({});
 
-  function refreshCases() {
-    listCases().then(setCases).catch(() => setCases([]));
+  // Modal state
+  const [deleteTarget, setDeleteTarget] = useState<ReviewCase | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ReviewCase | null>(null);
+  const [exportTarget, setExportTarget] = useState<number | null>(null);
+
+  function refreshCases(params?: CaseSearchParams) {
+    listCases(params ?? searchParams).then(setCases).catch(() => setCases([]));
   }
 
-  useEffect(() => {
-    refreshCases();
-  }, []);
+  useEffect(() => { refreshCases(); }, []);
+
+  function handleSearch(params: CaseSearchParams) {
+    setSearchParams(params);
+    refreshCases(params);
+  }
 
   function openCase(caseId: number) {
     const state = loadWorkspaceState();
@@ -36,54 +48,72 @@ export default function App() {
     openCase(caseId);
   }
 
-  async function handleDelete(caseId: number) {
-    if (!window.confirm("确认删除这条审核记录吗？")) return;
-    const deleteFiles = window.confirm("是否同时删除该记录的本地上传文件、OCR 中间结果和导出材料？");
-    await deleteCase(caseId, deleteFiles);
+  async function handleDeleteConfirmed(deleteFiles: boolean) {
+    if (!deleteTarget) return;
+    await deleteCase(deleteTarget.id, deleteFiles);
+    setDeleteTarget(null);
     refreshCases();
   }
 
-  async function handleRename(item: ReviewCase) {
-    const title = window.prompt("请输入新的合同名称", item.title);
-    if (title === null) return;
-    const note = window.prompt("请输入备注", item.note ?? "");
-    if (note === null) return;
-    await updateCase(item.id, { title, note });
+  async function handleRenameSubmit(title: string, note: string) {
+    if (!renameTarget) return;
+    await updateCase(renameTarget.id, { title, note });
+    setRenameTarget(null);
     refreshCases();
   }
 
-  async function handleExport(caseId: number) {
-    const scope = window.prompt(
-      "请选择导出范围：final / all / high_and_medium / confirmed",
-      "final",
-    ) as "final" | "all" | "high_and_medium" | "confirmed" | null;
-    if (!scope) return;
-    const format = window.prompt("请选择导出格式：markdown / docx / pdf", "markdown") as
-      | "markdown"
-      | "docx"
-      | "pdf"
-      | null;
-    if (!format) return;
-    const result = await exportCase(caseId, scope, format);
-    window.alert(`报告已导出：${result.filePath}`);
+  async function handleExportSubmit(scope: string, format: string) {
+    if (exportTarget === null) return;
+    const result = await exportCase(exportTarget, scope as any, format as any);
+    await downloadExport(result.filePath);
+    setExportTarget(null);
   }
 
   return (
+    <ErrorBoundary>
     <AppShell activePage={activePage} onNavigate={setActivePage}>
       {activePage === "cases" && (
         <CasesPage
           cases={cases}
-          onDelete={handleDelete}
-          onExport={handleExport}
+          onDelete={(id) => setDeleteTarget(cases.find((c) => c.id === id) ?? null)}
+          onExport={(id) => setExportTarget(id)}
           onOpen={openCase}
-          onRename={handleRename}
+          onRename={(item) => setRenameTarget(item)}
+          onSearch={handleSearch}
         />
       )}
       {activePage === "new" && <NewCasePage onCreated={handleCreated} />}
       {activePage === "settings" && <SettingsPage />}
+      {activePage === "audit" && <AuditLogPage />}
       {activePage === "workspace" && selectedCaseId && (
-        <ReviewWorkspacePage caseId={selectedCaseId} onCaseChanged={refreshCases} />
+        <ReviewWorkspacePage caseId={selectedCaseId} onCaseChanged={() => refreshCases()} />
       )}
+
+      {/* Modals */}
+      <ConfirmDialog
+        danger
+        message="确认删除这条审核记录吗？此操作不可撤销。"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => handleDeleteConfirmed(false)}
+        open={!!deleteTarget}
+        title="删除审核记录"
+        confirmLabel="删除"
+      />
+
+      <RenameDialog
+        defaultNote={deleteTarget?.note ?? renameTarget?.note ?? ""}
+        defaultTitle={renameTarget?.title ?? ""}
+        onClose={() => setRenameTarget(null)}
+        onSubmit={handleRenameSubmit}
+        open={!!renameTarget}
+      />
+
+      <ExportDialog
+        onClose={() => setExportTarget(null)}
+        onExport={handleExportSubmit}
+        open={exportTarget !== null}
+      />
     </AppShell>
+    </ErrorBoundary>
   );
 }

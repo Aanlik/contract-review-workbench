@@ -34,6 +34,41 @@ class FileIngestService:
             self.session.refresh(uploaded)
             return uploaded
 
+        self._persist_pages(uploaded, parsed_pages)
+        return uploaded
+
+    def ingest_background(self, uploaded_file_id: int) -> str:
+        """Queue OCR ingest as a background task. Returns task_id."""
+        from app.services.task_queue import task_queue
+
+        task = task_queue.submit(self._ingest_in_background, uploaded_file_id)
+        uploaded = self.session.get(UploadedFile, uploaded_file_id)
+        if uploaded:
+            uploaded.parse_status = "processing"
+            self.session.commit()
+        return task.task_id
+
+    def _ingest_in_background(self, uploaded_file_id: int) -> dict:
+        uploaded = self.session.get(UploadedFile, uploaded_file_id)
+        if uploaded is None:
+            return {"error": "File not found"}
+
+        file_path = Path(uploaded.original_path)
+        try:
+            parsed_pages = self.parser.extract_text(file_path, uploaded.file_type)
+        except RuntimeError as exc:
+            uploaded.parse_status = "ocr_failed"
+            self.session.commit()
+            return {"error": str(exc)}
+
+        self._persist_pages(uploaded, parsed_pages)
+        return {
+            "file_id": uploaded.id,
+            "pages": len(parsed_pages),
+            "status": uploaded.parse_status,
+        }
+
+    def _persist_pages(self, uploaded: UploadedFile, parsed_pages) -> None:
         uploaded.page_count = len(parsed_pages)
         uploaded.parse_method = self._detect_parse_method(parsed_pages)
         uploaded.parse_status = "parsed" if parsed_pages else "empty"
@@ -61,7 +96,6 @@ class FileIngestService:
 
         self.session.commit()
         self.session.refresh(uploaded)
-        return uploaded
 
     def _system_settings(self) -> SystemSettings:
         setting = self.session.get(AppSetting, "system")

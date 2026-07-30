@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.core.crypto import decrypt_api_key, encrypt_api_key
 from app.core.database import get_session
 from app.models.review import AppSetting
 from app.schemas.settings import AiConnectionTestResult, AiSettings, SystemSettings
@@ -15,12 +16,28 @@ _ai_settings: AiSettings | None = None
 _system_settings: SystemSettings | None = None
 
 
+def _encrypt_ai_value(data: dict) -> dict:
+    """Return a copy with api_key encrypted."""
+    encrypted = dict(data)
+    if encrypted.get("api_key"):
+        encrypted["api_key"] = encrypt_api_key(encrypted["api_key"])
+    return encrypted
+
+
+def _decrypt_ai_value(data: dict) -> dict:
+    """Return a copy with api_key decrypted."""
+    decrypted = dict(data)
+    if decrypted.get("api_key"):
+        decrypted["api_key"] = decrypt_api_key(decrypted["api_key"])
+    return decrypted
+
+
 @router.put("/ai", response_model=AiSettings)
 def save_ai_settings(payload: AiSettings, session: Session = Depends(get_session)):
     global _ai_settings
     _ai_settings = payload
     setting = session.get(AppSetting, "ai")
-    value = payload.model_dump()
+    value = _encrypt_ai_value(payload.model_dump())
     if setting is None:
         setting = AppSetting(key="ai", value=value)
         session.add(setting)
@@ -38,7 +55,7 @@ def get_ai_settings(session: Session = Depends(get_session)):
     setting = session.get(AppSetting, "ai")
     if setting is None:
         return None
-    _ai_settings = AiSettings(**setting.value)
+    _ai_settings = AiSettings(**_decrypt_ai_value(setting.value))
     return _ai_settings
 
 
@@ -77,7 +94,7 @@ def test_ai_settings(payload: AiSettings):
             [
                 {
                     "role": "user",
-                    "content": "连接测试：请只回复“连接正常”。",
+                    "content": "连接测试：请只回复「连接正常」。",
                 }
             ]
         )

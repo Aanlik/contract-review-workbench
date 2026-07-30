@@ -96,7 +96,7 @@ class Issue(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
     case: Mapped[ReviewCase] = relationship(back_populates="issues")
-    evidence_refs: Mapped[list["EvidenceRef"]] = relationship(back_populates="issue")
+    evidence_refs: Mapped[list["EvidenceRef"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
 
 
 class EvidenceRef(Base):
@@ -179,3 +179,15 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(primary_key=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action: Mapped[str] = mapped_column(index=True)
+    entity_type: Mapped[str] = mapped_column(index=True)
+    entity_id: Mapped[int | None] = mapped_column(default=None)
+    user: Mapped[str] = mapped_column(default="system")
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)

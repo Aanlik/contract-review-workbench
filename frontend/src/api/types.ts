@@ -137,3 +137,41 @@ export type SystemSettings = {
   ocrDpi: number;
   preprocessImages: boolean;
 };
+
+export type VersionDiffItem = {
+  issueId: number;
+  title: string;
+  changeType: "added" | "removed" | "modified";
+  riskLevel: string;
+  description: string;
+  oldRiskLevel: string | null;
+};
+
+export type VersionDiffResponse = {
+  versionA: number;
+  versionB: number;
+  changes: VersionDiffItem[];
+  summary: string;
+};
+
+export type TaskStatus = {
+  taskId: string;
+  status: "queued" | "running" | "completed" | "failed";
+  result: unknown;
+  error: string | null;
+  progress: string;
+  progressPercent: number;
+  currentStep: number;
+  totalSteps: number;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type CaseSearchParams = {
+  q?: string;
+  status?: string;
+  riskLevel?: string;
+  sortBy?: string;
+  sortOrder?: string;
+};

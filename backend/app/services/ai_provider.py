@@ -1,5 +1,7 @@
 from typing import Literal, TypedDict
 
+import time
+
 import httpx
 
 from app.schemas.settings import AiSettings
@@ -14,7 +16,7 @@ class OpenAICompatibleProvider:
     def __init__(self, settings: AiSettings) -> None:
         self.settings = settings
 
-    def chat(self, messages: list[ChatMessage]) -> str:
+    def chat(self, messages: list[ChatMessage], *, max_retries: int = 3) -> str:
         url = f"{self.settings.base_url.rstrip('/')}/chat/completions"
         headers = self._headers()
         payload = {
@@ -22,11 +24,20 @@ class OpenAICompatibleProvider:
             "messages": messages,
             "temperature": self.settings.temperature,
         }
-        with httpx.Client(timeout=self.settings.timeout_seconds) as client:
-            response = client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-        return data["choices"][0]["message"]["content"]
+        last_exc: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+                    response = client.post(url, headers=headers, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                return data["choices"][0]["message"]["content"]
+            except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
+                last_exc = exc
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(min(2 ** attempt, 8))
+        raise last_exc  # type: ignore[misc]
 
     def _headers(self) -> dict[str, str]:
         if "xiaomimimo.com" in self.settings.base_url:

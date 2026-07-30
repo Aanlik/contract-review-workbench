@@ -45,9 +45,32 @@ class DateHit:
     source: MaterialBlock | None
 
 
+# Progress steps
+STEPS = [
+    "加载材料和解析文本",
+    "流程合规审计",
+    "OCR 识别检查",
+    "AI 合同法律风险审查",
+    "生成审核结果",
+]
+
+
 class ReviewRunService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, task_id: str | None = None) -> None:
         self.session = session
+        self.task_id = task_id
+
+    def _report_progress(self, step_index: int, detail: str = "") -> None:
+        if not self.task_id:
+            return
+        from app.services.task_queue import task_queue
+        label = STEPS[step_index] if step_index < len(STEPS) else detail
+        task_queue.update_progress(
+            self.task_id,
+            progress=f"{label}" + (f" — {detail}" if detail else ""),
+            step=step_index + 1,
+            total=len(STEPS),
+        )
 
     def reanalyze(self, case_id: int, instruction: str | None = None) -> ReviewCase:
         review_case = self.session.get(ReviewCase, case_id)
@@ -55,7 +78,7 @@ class ReviewRunService:
             raise ValueError("Review case not found")
 
         review_case.current_version += 1
-        review_case.status = "completed"
+        review_case.status = "analyzing"
         self.session.add(
             ReviewVersion(
                 case_id=case_id,
@@ -65,11 +88,37 @@ class ReviewRunService:
                 note="基础规则审计版本",
             )
         )
+        self.session.commit()
 
+        # Step 1: Load materials
+        self._report_progress(0, "正在读取上传文件和 OCR 文本...")
         materials = self._load_materials(case_id)
+        file_count = len(materials)
+        block_count = sum(len(m.blocks) for m in materials)
+        self._report_progress(0, f"已加载 {file_count} 个文件，{block_count} 个文本块")
+
+        # Step 2: Process audit
+        self._report_progress(1, "正在检查签报日期、合同签订日期和盖章...")
         created = self._create_process_audit_issues(review_case, materials)
-        created.extend(self._create_ocr_gap_issues(review_case, materials))
-        created.extend(self._create_ai_contract_issues(review_case, materials, instruction))
+        self._report_progress(1, f"流程审计发现 {len(created)} 个问题")
+
+        # Step 3: OCR gap check
+        self._report_progress(2, "正在检查 OCR 识别覆盖率...")
+        ocr_issues = self._create_ocr_gap_issues(review_case, materials)
+        created.extend(ocr_issues)
+        if ocr_issues:
+            self._report_progress(2, f"发现 {len(ocr_issues)} 个识别缺口")
+        else:
+            self._report_progress(2, "OCR 覆盖正常")
+
+        # Step 4: AI contract review
+        self._report_progress(3, "正在调用 AI 进行法律风险审查...")
+        ai_issues = self._create_ai_contract_issues(review_case, materials, instruction)
+        created.extend(ai_issues)
+        self._report_progress(3, f"AI 审查发现 {len(ai_issues)} 个问题")
+
+        # Step 5: Finalize
+        self._report_progress(4, "正在汇总审核结果...")
         if not created:
             created.append(
                 self._create_issue(
@@ -88,6 +137,7 @@ class ReviewRunService:
             or len(created)
         )
         review_case.highest_risk_level = self._highest_risk(case_id)
+        review_case.status = "completed"
         self.session.commit()
         self.session.refresh(review_case)
         return review_case
@@ -96,7 +146,11 @@ class ReviewRunService:
         files = self.session.scalars(
             select(UploadedFile).where(UploadedFile.case_id == case_id).order_by(UploadedFile.id.asc())
         ).all()
-        return [self._material(file) for file in files]
+        result: list[MaterialText] = []
+        for i, file in enumerate(files):
+            self._report_progress(0, f"正在加载第 {i + 1}/{len(files)} 个文件: {file.file_name}")
+            result.append(self._material(file))
+        return result
 
     def _material(self, uploaded_file: UploadedFile) -> MaterialText:
         persisted_blocks = self._read_persisted_blocks(uploaded_file.id)
@@ -139,9 +193,11 @@ class ReviewRunService:
                 import fitz
 
                 with fitz.open(path) as document:
-                    return "\n".join(page.get_text() for page in document)
+                    return "\n".join(page.get_text() for page in document).strip()
             except Exception:
                 return ""
+        if path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+            return ""
         return ""
 
     def _create_process_audit_issues(
@@ -149,82 +205,125 @@ class ReviewRunService:
         review_case: ReviewCase,
         materials: list[MaterialText],
     ) -> list[Issue]:
-        contract_materials = [item for item in materials if item.file.file_type == "contract"]
-        flow_materials = [item for item in materials if item.file.file_type != "contract"]
-        contract_text = "\n".join(item.text for item in contract_materials)
-        contract_date = self._extract_date_hit(contract_materials, ["合同签订日期", "签订日期", "签署日期"])
-        legal_review_date = self._extract_date_hit(flow_materials, ["法务审核", "法审", "法律审核"])
-        approval_date = self._extract_date_hit(flow_materials, ["审批通过", "签批", "批准"])
-        flow_text = "\n".join(item.text for item in flow_materials)
         created: list[Issue] = []
+        contract_materials = [m for m in materials if m.file.file_type == "contract"]
+        approval_materials = [m for m in materials if m.file.file_type in {"sign_report", "meeting_minutes", "approval"}]
 
-        if contract_date and legal_review_date and legal_review_date.value > contract_date.value:
-            created.append(
-                self._create_issue(
-                    review_case,
-                    issue_type="process_audit",
-                    title="法审日期晚于合同签订日期",
-                    risk_level="high",
-                    description="识别到法务审核日期晚于合同签订日期，存在先签署后法审的流程合规风险。",
-                    suggestion="请核对合同实际签署日期和法审记录，如属实应补充说明并重新履行法审前置流程。",
-                    evidence_text=f"合同签订日期：{contract_date.value.isoformat()}；法审日期：{legal_review_date.value.isoformat()}",
-                    evidence_sources=[contract_date.source, legal_review_date.source],
-                )
+        if not contract_materials:
+            return created
+
+        contract_blocks = [block for m in contract_materials for block in m.blocks]
+        contract_text = "\n".join(block.text for block in contract_blocks)
+
+        contract_sign_date = self._extract_date(contract_text, ["签订日期", "签署日期", "签约日期", "签字日期"])
+        contract_effective_date = self._extract_date(contract_text, ["生效日期", "生效时间", "合同生效"])
+
+        if approval_materials:
+            approval_text = "\n".join(
+                block.text for m in approval_materials for block in m.blocks
+            )
+            legal_review_date = self._extract_date(
+                approval_text, ["法审日期", "法审时间", "法律审查", "法务审查日期", "法审完成", "法务审核"]
+            )
+            approval_date = self._extract_date(
+                approval_text, ["签批日期", "审批日期", "批准日期", "签报日期", "最终审批", "审批通过"]
             )
 
-        if contract_date and approval_date and approval_date.value > contract_date.value:
-            created.append(
-                self._create_issue(
-                    review_case,
-                    issue_type="process_audit",
-                    title="合同签订日期早于审批通过日期",
-                    risk_level="high",
-                    description="识别到合同签订日期早于审批通过日期，存在先签后批的内控流程风险。",
-                    suggestion="请核对审批通过节点和签署页日期，如属实应提交流程异常说明并补齐审批依据。",
-                    evidence_text=f"合同签订日期：{contract_date.value.isoformat()}；审批通过日期：{approval_date.value.isoformat()}",
-                    evidence_sources=[contract_date.source, approval_date.source],
-                )
+            reference_date = contract_sign_date or contract_effective_date
+            contract_date_hit = self._extract_date_hit(
+                contract_materials, ["签订日期", "签署日期", "签约日期", "签字日期", "生效日期", "生效时间", "合同生效"]
             )
+            if reference_date and legal_review_date and legal_review_date > reference_date:
+                legal_hit = self._extract_date_hit(
+                    approval_materials, ["法审日期", "法审时间", "法律审查", "法务审查日期", "法审完成", "法务审核"]
+                )
+                created.append(
+                    self._create_issue(
+                        review_case,
+                        issue_type="process_audit",
+                        title="法审日期晚于合同签订日期",
+                        risk_level="high",
+                        description=(
+                            f"合同签订日期为 {reference_date}，但法审完成日期为 {legal_review_date}。"
+                            "法审应在合同签订前完成，否则合同条款可能未经法律审查即生效，存在合规风险。"
+                        ),
+                        suggestion="请确认合同签订流程是否合规，法审是否在签订前完成。如有异常需追溯审批流程。",
+                        evidence_text=None,
+                        evidence_sources=[contract_date_hit.source if contract_date_hit else None, legal_hit.source if legal_hit else None],
+                    )
+                )
 
-        if contract_date and flow_text.strip() and not legal_review_date:
+            if reference_date and approval_date and approval_date > reference_date:
+                approval_hit = self._extract_date_hit(
+                    approval_materials, ["签批日期", "审批日期", "批准日期", "签报日期", "最终审批", "审批通过"]
+                )
+                created.append(
+                    self._create_issue(
+                        review_case,
+                        issue_type="process_audit",
+                        title="合同签订日期早于审批通过日期",
+                        risk_level="high",
+                        description=(
+                            f"合同签订日期为 {reference_date}，但签批完成日期为 {approval_date}。"
+                            "合同不应在审批通过前签订，否则可能违反内部审批制度。"
+                        ),
+                        suggestion="请核实审批流程是否在合同签订前全部完成。",
+                        evidence_text=None,
+                        evidence_sources=[contract_date_hit.source if contract_date_hit else None, approval_hit.source if approval_hit else None],
+                    )
+                )
+
+            # Check for missing legal review and final approval records
+            # Only flag as missing if no date was successfully extracted for these labels
+            if legal_review_date is None:
+                created.append(
+                    self._create_issue(
+                        review_case,
+                        issue_type="process_audit",
+                        title="未识别到法务审核记录",
+                        risk_level="medium",
+                        description=(
+                            "在签报/会议纪要材料中未检测到法审、法律审查或法务审查相关记录。"
+                            "合同可能未经法务审核即进入签批流程。"
+                        ),
+                        suggestion="请确认合同是否已提交法务审核，并补充相关审核记录。",
+                        evidence_text=None,
+                    )
+                )
+
+            if approval_date is None:
+                created.append(
+                    self._create_issue(
+                        review_case,
+                        issue_type="process_audit",
+                        title="未识别到最终审批通过记录",
+                        risk_level="medium",
+                        description=(
+                            "在签报/会议纪要材料中未检测到审批通过、最终审批等相关记录。"
+                            "合同可能缺少最终审批环节。"
+                        ),
+                        suggestion="请确认合同是否已获得最终审批通过。",
+                        evidence_text=None,
+                    )
+                )
+
+        seal_keywords = ["公章", "合同专用章", "盖章", "印章"]
+        has_seal_text = any(
+            keyword in contract_text for keyword in seal_keywords
+        )
+        if not has_seal_text:
             created.append(
                 self._create_issue(
                     review_case,
                     issue_type="process_audit",
-                    title="未识别到法务审核记录",
+                    title="合同可能缺少盖章信息",
                     risk_level="medium",
-                    description="已识别到合同签订日期和流程材料，但未抽取到明确法务审核日期或法审节点，存在法审依据缺失风险。",
-                    suggestion="请核对 OA 签报、法审意见或审批单，补充上传包含法审节点的材料，或由法务人工确认无需法审的制度依据。",
-                    evidence_text="流程材料未识别到法务审核记录",
-                    evidence_sources=self._first_blocks(flow_materials),
-                )
-            )
-
-        if contract_date and flow_text.strip() and not approval_date:
-            created.append(
-                self._create_issue(
-                    review_case,
-                    issue_type="process_audit",
-                    title="未识别到最终审批通过记录",
-                    risk_level="high",
-                    description="已识别到合同签订日期和流程材料，但未抽取到明确审批通过或签批完成节点，存在未完成审批即签署的内控风险。",
-                    suggestion="请核对最终审批节点、签批单或会议决议，确认合同签署前审批已完成。",
-                    evidence_text="流程材料未识别到最终审批通过记录",
-                    evidence_sources=self._first_blocks(flow_materials),
-                )
-            )
-
-        if "乙方盖章：缺失" in contract_text or "乙方盖章缺失" in contract_text:
-            created.append(
-                self._create_issue(
-                    review_case,
-                    issue_type="process_audit",
-                    title="疑似合同盖章不齐全",
-                    risk_level="high",
-                    description="合同文本或签署页信息显示乙方盖章缺失，可能影响合同成立、证明力或后续履约追责。",
-                    suggestion="请人工核对合同签章页，确认双方签字盖章是否完整。",
-                    evidence_text="乙方盖章：缺失",
-                    evidence_sources=self._find_blocks(contract_materials, "乙方盖章"),
+                    description=(
+                        "在合同文本中未检测到公章、合同专用章等盖章相关描述。"
+                        "可能是因为合同为扫描件未完整 OCR 识别，也可能确实缺少盖章。"
+                    ),
+                    suggestion="请人工确认合同是否已加盖公章或合同专用章。",
+                    evidence_text=None,
                 )
             )
 
@@ -237,16 +336,36 @@ class ReviewRunService:
     ) -> list[Issue]:
         created: list[Issue] = []
         for material in materials:
-            if material.file.file_type == "contract" and not material.text.strip():
+            if material.file.file_type != "contract":
+                continue
+            if material.file.parse_status in {"needs_ocr", "ocr_failed"}:
                 created.append(
                     self._create_issue(
                         review_case,
                         issue_type="contract_risk",
                         title="合同扫描件 OCR 未完成",
-                        risk_level="info",
-                        description="该合同文件未能抽取到可审查文本，可能是纯图片扫描件且本地 OCR 引擎尚未安装或未完成识别。",
-                        suggestion="请安装并启用 PaddleOCR/RapidOCR，或先上传可复制文字的 PDF/TXT 版本，也可以使用人工标记补充关键条款。",
-                        evidence_text=material.file.file_name,
+                        risk_level="medium",
+                        description=(
+                            f"文件 {material.file.file_name} 的 OCR 识别状态为 {material.file.parse_status}。"
+                            "扫描件合同需要 OCR 识别后才能进行文本审查。"
+                        ),
+                        suggestion="请重新上传该文件，或联系技术人员检查 OCR 引擎配置。",
+                        evidence_text=None,
+                    )
+                )
+            elif not material.text.strip() and material.file.file_name.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff")):
+                created.append(
+                    self._create_issue(
+                        review_case,
+                        issue_type="contract_risk",
+                        title="合同扫描件 OCR 未完成",
+                        risk_level="medium",
+                        description=(
+                            f"文件 {material.file.file_name} 为图片扫描件，未提取到可审查文本。"
+                            "需要 OCR 识别后才能进行合同条款审查。"
+                        ),
+                        suggestion="请重新上传该文件，确保 OCR 引擎已正确配置。",
+                        evidence_text=None,
                     )
                 )
         return created
@@ -257,15 +376,28 @@ class ReviewRunService:
         materials: list[MaterialText],
         instruction: str | None,
     ) -> list[Issue]:
-        setting = self.session.get(AppSetting, "ai")
-        if setting is None:
+        contract_text = "\n".join(
+            block.text for m in materials if m.file.file_type == "contract" for block in m.blocks
+        ).strip()
+
+        if not contract_text:
             return []
 
-        contract_text = "\n".join(item.text for item in materials if item.file.file_type == "contract")
-        if not contract_text.strip():
-            return []
+        ai_settings = self._load_ai_settings()
+        if ai_settings is None:
+            return [
+                self._create_issue(
+                    review_case,
+                    issue_type="contract_risk",
+                    title="未配置 AI 接口，跳过专业律师审查",
+                    risk_level="info",
+                    description="当前未配置 AI Base URL 和 API Key，无法调用第三方 AI 进行合同法律风险审查。",
+                    suggestion="请在设置页面配置 AI 接口后，点击重新审核。",
+                    evidence_text=None,
+                )
+            ]
 
-        provider = OpenAICompatibleProvider(AiSettings(**setting.value))
+        provider = OpenAICompatibleProvider(ai_settings)
         try:
             response_text = provider.chat(build_contract_review_prompt(contract_text, instruction))
             payload = json.loads(response_text)
@@ -297,6 +429,15 @@ class ReviewRunService:
             created.append(issue)
         return created
 
+    def _load_ai_settings(self) -> AiSettings | None:
+        setting = self.session.get(AppSetting, "ai")
+        if setting is None:
+            return None
+        try:
+            return AiSettings(**setting.value)
+        except Exception:
+            return None
+
     def _extract_date_hit(self, materials: list[MaterialText], labels: list[str]) -> DateHit | None:
         for material in materials:
             for block in material.blocks or [MaterialBlock(text=material.text)]:
@@ -312,10 +453,13 @@ class ReviewRunService:
         source: MaterialBlock | None,
     ) -> DateHit | None:
         for label in labels:
-            match = re.search(rf"{label}[^\d]*(\d{{4}})[年/-](\d{{1,2}})[月/-](\d{{1,2}})", text)
+            match = re.search(rf"{label}[^\d]*?(\d{{4}})[年/-](\d{{1,2}})[月/-](\d{{1,2}})", text)
             if match:
                 year, month, day = map(int, match.groups())
-                return DateHit(value=date(year, month, day), label=label, source=source)
+                try:
+                    return DateHit(value=date(year, month, day), label=label, source=source)
+                except ValueError:
+                    continue
         return None
 
     def _find_blocks(self, materials: list[MaterialText], text: str) -> list[MaterialBlock]:

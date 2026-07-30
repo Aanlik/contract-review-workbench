@@ -3,15 +3,19 @@ import { useEffect, useMemo, useState } from "react";
 import {
   applyAiMessageAsNewIssue,
   applyAiMessageToIssue,
+  batchDeleteIssues,
+  batchUpdateIssues,
   createManualIssue,
+  downloadExport,
   exportCase,
   getCaseChat,
   getIssueChat,
-  listCaseVersions,
   listCaseDocuments,
   listCaseFiles,
+  listCaseVersions,
   listIssues,
-  reanalyzeCase,
+  reanalyzeAsync,
+  getTask,
   sendCaseChat,
   sendIssueChat,
   updateIssue,
@@ -22,12 +26,16 @@ import type {
   Issue,
   IssueUpdatePayload,
   ManualIssuePayload,
+  ReviewVersion,
+  TaskStatus,
   UploadedFile,
 } from "../api/types";
 import { AiChatPanel } from "../components/AiChatPanel";
+import { ConfirmDialog } from "../components/Modal";
 import { EvidenceViewer } from "../components/EvidenceViewer";
 import { IssueDetail } from "../components/IssueDetail";
 import { IssueList } from "../components/IssueList";
+import { VersionComparison } from "../components/VersionComparison";
 import { loadWorkspaceState, saveWorkspaceState } from "../state/workspace";
 
 type ReviewWorkspacePageProps = {
@@ -35,16 +43,25 @@ type ReviewWorkspacePageProps = {
   onCaseChanged: () => void;
 };
 
+type WorkspaceTab = "issues" | "versions";
+
 export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePageProps) {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [documents, setDocuments] = useState<CaseDocument[]>([]);
   const [messages, setMessages] = useState<AiMessage[]>([]);
+  const [versions, setVersions] = useState<ReviewVersion[]>([]);
   const [status, setStatus] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>(loadWorkspaceState().filters);
   const [selectedIssueId, setSelectedIssueId] = useState<number | undefined>(
     loadWorkspaceState().selectedIssueId,
   );
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("issues");
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"markdown" | "docx" | "pdf">("markdown");
+  const [exportScope, setExportScope] = useState<"final" | "all" | "high_and_medium" | "confirmed">("final");
+  const [batchDeleteTarget, setBatchDeleteTarget] = useState<number[] | null>(null);
+
   const selectedIssue = useMemo(
     () => issues.find((issue) => issue.id === selectedIssueId),
     [issues, selectedIssueId],
@@ -71,6 +88,10 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
     setDocuments(await listCaseDocuments(caseId));
   }
 
+  async function refreshVersions() {
+    setVersions(await listCaseVersions(caseId));
+  }
+
   async function refreshChat() {
     const chat = selectedIssueId
       ? await getIssueChat(caseId, selectedIssueId)
@@ -82,6 +103,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
     refreshIssues().catch((error) => setStatus(error.message));
     refreshFiles().catch(() => setFiles([]));
     refreshDocuments().catch(() => setDocuments([]));
+    refreshVersions().catch(() => setVersions([]));
   }, [caseId]);
 
   useEffect(() => {
@@ -97,98 +119,189 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   }
 
   async function handleSaveIssue(issueId: number, payload: IssueUpdatePayload) {
-    const saved = await updateIssue(issueId, payload);
-    setIssues((current) => current.map((issue) => (issue.id === saved.id ? saved : issue)));
-    setStatus("问题已保存。");
+    await updateIssue(issueId, payload);
+    await refreshIssues();
+    onCaseChanged();
   }
 
   async function handleReanalyze() {
-    setStatus("正在重新审核...");
-    await reanalyzeCase(caseId, selectedIssue ? `围绕问题重新分析：${selectedIssue.title}` : undefined);
-    await refreshIssues();
-    onCaseChanged();
-    setStatus("重新审核完成。");
+    setIsReanalyzing(true);
+    setStatus("正在提交审核任务...");
+    try {
+      const { taskId } = await reanalyzeAsync(caseId);
+      setStatus("审核任务已提交，正在后台处理...");
+
+      // Poll for progress
+      const result = await new Promise<TaskStatus>((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const task = await getTask(taskId);
+            if (task.progress) setStatus(task.progress);
+            if (task.status === "completed" || task.status === "failed") {
+              clearInterval(interval);
+              if (task.status === "failed") {
+                reject(new Error(task.error || "审核失败"));
+              } else {
+                resolve(task);
+              }
+            }
+          } catch (err) {
+            clearInterval(interval);
+            reject(err);
+          }
+        }, 1000);
+      });
+
+      await refreshIssues();
+      await refreshVersions();
+      onCaseChanged();
+      setStatus(`重新审核完成。发现 ${((result.result as any)?.issue_count) ?? "?"} 个问题。`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "重新审核失败。");
+    } finally {
+      setIsReanalyzing(false);
+    }
   }
 
   async function handleSendChat(message: string) {
-    const chat = selectedIssue
-      ? await sendIssueChat(caseId, selectedIssue.id, message)
+    const conversation = selectedIssueId
+      ? await sendIssueChat(caseId, selectedIssueId, message)
       : await sendCaseChat(caseId, message);
-    setMessages(chat.messages);
+    setMessages(conversation.messages);
   }
 
-  async function handleApplyAsSuggestion(messageId: number) {
-    if (!selectedIssue) {
-      setStatus("请先选择一个问题，再应用为建议。");
-      return;
+  async function handleApplySuggestion(messageId: number) {
+    if (selectedIssueId) {
+      await applyAiMessageToIssue(selectedIssueId, messageId, "update_suggestion");
+      await refreshIssues();
     }
-    const saved = await applyAiMessageToIssue(selectedIssue.id, messageId, "update_suggestion");
-    setIssues((current) => current.map((issue) => (issue.id === saved.id ? saved : issue)));
-    setStatus("AI 回复已应用为当前问题建议。");
   }
 
   async function handleApplyAsNewIssue(messageId: number) {
-    const issue = await applyAiMessageAsNewIssue(messageId);
+    await applyAiMessageAsNewIssue(messageId);
     await refreshIssues();
-    setSelectedIssueId(issue.id);
-    setStatus("AI 回复已应用为新问题。");
+  }
+
+  async function handleBatchUpdate(issueIds: number[], updates: { status?: string; riskLevel?: string }) {
+    await batchUpdateIssues(issueIds, updates);
+    await refreshIssues();
+    onCaseChanged();
+  }
+
+  async function handleBatchDelete(issueIds: number[]) {
+    setBatchDeleteTarget(issueIds);
+  }
+
+  async function confirmBatchDelete() {
+    if (!batchDeleteTarget) return;
+    await batchDeleteIssues(batchDeleteTarget);
+    setBatchDeleteTarget(null);
+    await refreshIssues();
+    onCaseChanged();
   }
 
   async function handleExport() {
-    const result = await exportCase(caseId, "final", "markdown");
-    setStatus(`报告已导出：${result.filePath}`);
-  }
-
-  async function handleShowVersions() {
-    const versions = await listCaseVersions(caseId);
-    if (!versions.length) {
-      setStatus("暂无审核版本记录。");
-      return;
+    try {
+      setStatus("正在导出...");
+      const result = await exportCase(caseId, exportScope, exportFormat);
+      await downloadExport(result.filePath);
+      setStatus("报告已导出并开始下载。");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "导出失败");
     }
-    setStatus(
-      versions
-        .map((version) => `V${version.versionNumber} ${version.trigger} ${version.reviewRequest ?? ""}`)
-        .join("；"),
-    );
   }
 
   return (
-    <>
-      <div className="workspace-actions">
-        <button onClick={handleReanalyze} type="button">整份合同重新审核</button>
-        <button onClick={handleExport} type="button">导出报告</button>
-        <button onClick={handleShowVersions} type="button">查看版本</button>
-        {status && <span>{status}</span>}
-      </div>
-      <section className="workspace-grid">
-        <aside className="issue-column">
-          <IssueList
-            filters={filters}
-            issues={issues}
-            onFilterChange={setFilters}
-            onSelect={setSelectedIssueId}
-            selectedIssueId={selectedIssueId}
-          />
-        </aside>
-        <section className="evidence-column">
-          <EvidenceViewer
-            documents={documents}
-            files={files}
-            issue={selectedIssue}
-            onCreateManualIssue={handleCreateManualIssue}
-          />
-        </section>
-        <aside className="detail-column">
-          <IssueDetail issue={selectedIssue} onReanalyze={handleReanalyze} onSave={handleSaveIssue} />
-          <AiChatPanel
-            messages={messages}
-            onApplyAsNewIssue={handleApplyAsNewIssue}
-            onApplyAsSuggestion={handleApplyAsSuggestion}
-            onSend={handleSendChat}
-            scopeLabel={selectedIssue ? `当前问题：${selectedIssue.title}` : "任务级对话"}
-          />
-        </aside>
-      </section>
-    </>
+    <section className="workspace">
+      <header className="workspace-header">
+        <div className="workspace-tabs">
+          <button
+            className={activeTab === "issues" ? "active" : ""}
+            onClick={() => setActiveTab("issues")}
+            type="button"
+          >
+            问题审核
+          </button>
+          <button
+            className={activeTab === "versions" ? "active" : ""}
+            onClick={() => setActiveTab("versions")}
+            type="button"
+          >
+            版本对比
+          </button>
+        </div>
+        <div className="workspace-actions">
+          <button disabled={isReanalyzing} onClick={handleReanalyze} type="button">
+            {isReanalyzing ? "审核中..." : "重新分析"}
+          </button>
+          <select onChange={(e) => setExportScope(e.target.value as any)} value={exportScope}>
+            <option value="final">最终版</option>
+            <option value="all">全部</option>
+            <option value="high_and_medium">高+中风险</option>
+            <option value="confirmed">已确认</option>
+          </select>
+          <select onChange={(e) => setExportFormat(e.target.value as any)} value={exportFormat}>
+            <option value="markdown">Markdown</option>
+            <option value="docx">Word (DOCX)</option>
+            <option value="pdf">PDF/HTML</option>
+          </select>
+          <button onClick={handleExport} type="button">导出报告</button>
+        </div>
+        {status && <p className="workspace-status">{status}</p>}
+      </header>
+
+      {activeTab === "issues" && (
+        <div className="workspace-layout">
+          <div className="workspace-left">
+            <IssueList
+              filters={filters}
+              issues={issues}
+              selectedIssueId={selectedIssueId}
+              onBatchDelete={handleBatchDelete}
+              onBatchUpdate={handleBatchUpdate}
+              onFilterChange={setFilters}
+              onSelect={setSelectedIssueId}
+            />
+          </div>
+          <div className="workspace-center">
+            <IssueDetail
+              issue={selectedIssue}
+              onSave={handleSaveIssue}
+              onReanalyze={handleReanalyze}
+            />
+            <EvidenceViewer
+              documents={documents}
+              files={files}
+              issue={selectedIssue}
+              onCreateManualIssue={handleCreateManualIssue}
+            />
+          </div>
+          <div className="workspace-right">
+            <AiChatPanel
+              messages={messages}
+              onApplyAsNewIssue={handleApplyAsNewIssue}
+              onApplyAsSuggestion={handleApplySuggestion}
+              onSend={handleSendChat}
+              scopeLabel={selectedIssue ? `问题: ${selectedIssue.title}` : "整份合同"}
+            />
+          </div>
+        </div>
+      )}
+
+      {activeTab === "versions" && (
+        <div className="workspace-versions">
+          <VersionComparison caseId={caseId} />
+        </div>
+      )}
+      <ConfirmDialog
+        danger
+        message={`确认删除选中的 ${batchDeleteTarget?.length ?? 0} 个问题吗？此操作不可撤销。`}
+        onClose={() => setBatchDeleteTarget(null)}
+        onConfirm={confirmBatchDelete}
+        open={batchDeleteTarget !== null}
+        title="批量删除问题"
+        confirmLabel="删除"
+      />
+    </section>
   );
 }
