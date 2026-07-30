@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 from datetime import date
+import json
 from pathlib import Path
 import re
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.review import EvidenceRef, Issue, ReviewCase, ReviewVersion, UploadedFile
+from app.models.review import AppSetting, EvidenceRef, Issue, ReviewCase, ReviewVersion, UploadedFile
+from app.schemas.settings import AiSettings
+from app.services.ai_provider import OpenAICompatibleProvider, build_contract_review_prompt
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,7 @@ class ReviewRunService:
 
         materials = self._load_materials(case_id)
         created = self._create_process_audit_issues(review_case, materials)
+        created.extend(self._create_ai_contract_issues(review_case, materials, instruction))
         if not created:
             created.append(
                 self._create_issue(
@@ -132,6 +136,52 @@ class ReviewRunService:
 
         return created
 
+    def _create_ai_contract_issues(
+        self,
+        review_case: ReviewCase,
+        materials: list[MaterialText],
+        instruction: str | None,
+    ) -> list[Issue]:
+        setting = self.session.get(AppSetting, "ai")
+        if setting is None:
+            return []
+
+        contract_text = "\n".join(item.text for item in materials if item.file.file_type == "contract")
+        if not contract_text.strip():
+            return []
+
+        provider = OpenAICompatibleProvider(AiSettings(**setting.value))
+        try:
+            response_text = provider.chat(build_contract_review_prompt(contract_text, instruction))
+            payload = json.loads(response_text)
+        except Exception:
+            return [
+                self._create_issue(
+                    review_case,
+                    issue_type="contract_risk",
+                    title="AI 合同审查调用失败",
+                    risk_level="info",
+                    description="系统未能完成第三方 AI 合同审查，可能是接口配置、网络或模型返回格式异常。",
+                    suggestion="请检查 AI Base URL、API Key、模型名，并重新审核。",
+                    evidence_text=None,
+                )
+            ]
+
+        created: list[Issue] = []
+        for item in payload.get("issues", []):
+            issue = self._create_issue(
+                review_case,
+                issue_type="contract_risk",
+                title=str(item.get("title") or "合同风险"),
+                risk_level=self._normalize_risk(str(item.get("risk_level") or "info")),
+                description=str(item.get("description") or ""),
+                suggestion=str(item.get("suggestion") or ""),
+                evidence_text=item.get("original_text"),
+            )
+            issue.replacement_clause = item.get("replacement_clause")
+            created.append(issue)
+        return created
+
     def _extract_date(self, text: str, labels: list[str]) -> date | None:
         for label in labels:
             match = re.search(
@@ -169,6 +219,10 @@ class ReviewRunService:
         if evidence_text:
             self.session.add(EvidenceRef(issue_id=issue.id, original_text=evidence_text, confidence=0.9))
         return issue
+
+    def _normalize_risk(self, risk_level: str) -> str:
+        normalized = risk_level.strip().lower()
+        return normalized if normalized in {"high", "medium", "low", "info"} else "info"
 
     def _highest_risk(self, case_id: int) -> str | None:
         levels = [
