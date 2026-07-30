@@ -6,10 +6,19 @@ type AiChatPanelProps = {
   scopeLabel: string;
   messages: AiMessage[];
   onSend: (message: string) => void;
+  onApplyAsSuggestion: (messageId: number) => void;
+  onApplyAsNewIssue: (messageId: number) => void;
 };
 
-export function AiChatPanel({ scopeLabel, messages, onSend }: AiChatPanelProps) {
+export function AiChatPanel({
+  scopeLabel,
+  messages,
+  onApplyAsNewIssue,
+  onApplyAsSuggestion,
+  onSend,
+}: AiChatPanelProps) {
   const [draft, setDraft] = useState("");
+  const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
 
   function send() {
     if (!draft.trim()) return;
@@ -42,8 +51,20 @@ export function AiChatPanel({ scopeLabel, messages, onSend }: AiChatPanelProps) 
         <button onClick={send} type="button">
           发送
         </button>
-        <button type="button">应用为建议</button>
-        <button type="button">应用为新问题</button>
+        <button
+          disabled={!latestAssistant}
+          onClick={() => latestAssistant && onApplyAsSuggestion(latestAssistant.id)}
+          type="button"
+        >
+          应用为建议
+        </button>
+        <button
+          disabled={!latestAssistant}
+          onClick={() => latestAssistant && onApplyAsNewIssue(latestAssistant.id)}
+          type="button"
+        >
+          应用为新问题
+        </button>
       </div>
     </div>
   );

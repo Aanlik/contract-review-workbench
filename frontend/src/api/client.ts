@@ -182,6 +182,28 @@ export async function updateIssue(issueId: number, payload: IssueUpdatePayload):
   return fromSnakeCaseIssue(await parseJsonResponse(response));
 }
 
+export async function applyAiMessageToIssue(
+  issueId: number,
+  messageId: number,
+  action: "update_suggestion" | "update_description" | "adjust_risk_level",
+): Promise<Issue> {
+  const response = await fetch(`${API_BASE}/issues/${issueId}/apply-ai-message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message_id: messageId, action }),
+  });
+  return fromSnakeCaseIssue(await parseJsonResponse(response));
+}
+
+export async function applyAiMessageAsNewIssue(messageId: number): Promise<Issue> {
+  const response = await fetch(`${API_BASE}/ai-messages/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message_id: messageId, action: "new_issue" }),
+  });
+  return fromSnakeCaseIssue(await parseJsonResponse(response));
+}
+
 export async function reanalyzeCase(caseId: number, instruction?: string): Promise<ReviewCase> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/reanalyze`, {
     method: "POST",

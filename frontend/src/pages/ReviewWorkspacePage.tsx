@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  applyAiMessageAsNewIssue,
+  applyAiMessageToIssue,
   createManualIssue,
   exportCase,
   getCaseChat,
@@ -96,6 +98,23 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
     setMessages(chat.messages);
   }
 
+  async function handleApplyAsSuggestion(messageId: number) {
+    if (!selectedIssue) {
+      setStatus("请先选择一个问题，再应用为建议。");
+      return;
+    }
+    const saved = await applyAiMessageToIssue(selectedIssue.id, messageId, "update_suggestion");
+    setIssues((current) => current.map((issue) => (issue.id === saved.id ? saved : issue)));
+    setStatus("AI 回复已应用为当前问题建议。");
+  }
+
+  async function handleApplyAsNewIssue(messageId: number) {
+    const issue = await applyAiMessageAsNewIssue(messageId);
+    await refreshIssues();
+    setSelectedIssueId(issue.id);
+    setStatus("AI 回复已应用为新问题。");
+  }
+
   async function handleExport() {
     const result = await exportCase(caseId);
     setStatus(`报告已导出：${result.filePath}`);
@@ -119,6 +138,8 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
           <IssueDetail issue={selectedIssue} onReanalyze={handleReanalyze} onSave={handleSaveIssue} />
           <AiChatPanel
             messages={messages}
+            onApplyAsNewIssue={handleApplyAsNewIssue}
+            onApplyAsSuggestion={handleApplyAsSuggestion}
             onSend={handleSendChat}
             scopeLabel={selectedIssue ? `当前问题：${selectedIssue.title}` : "任务级对话"}
           />

@@ -60,3 +60,14 @@ def apply_ai_message(
         return IssueService(session).apply_ai_message(issue_id, payload.message_id, payload.action)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/ai-messages/apply", response_model=IssueRead)
+def apply_ai_message_without_issue(
+    payload: ApplyAiMessageRequest,
+    session: Session = Depends(get_session),
+):
+    try:
+        return IssueService(session).apply_ai_message(None, payload.message_id, payload.action)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
