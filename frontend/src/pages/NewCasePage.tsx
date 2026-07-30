@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 
-import { createCase, uploadCaseFile } from "../api/client";
+import { createCase, reanalyzeCase, uploadCaseFile } from "../api/client";
 
 type NewCasePageProps = {
   onCreated: (caseId: number) => void;
@@ -29,6 +29,8 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
     await uploadCaseFile(reviewCase.id, "contract", contract);
     if (signReport) await uploadCaseFile(reviewCase.id, "sign_report", signReport);
     if (meetingMinutes) await uploadCaseFile(reviewCase.id, "meeting_minutes", meetingMinutes);
+    setStatus("正在执行首次审核...");
+    await reanalyzeCase(reviewCase.id, note || "首次审核");
     setStatus("审核任务已创建。");
     onCreated(reviewCase.id);
   }
