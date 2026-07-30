@@ -171,3 +171,11 @@ class ExportRecord(Base):
     file_path: Mapped[str]
     export_scope: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
