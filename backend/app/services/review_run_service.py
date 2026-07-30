@@ -1,0 +1,181 @@
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+import re
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.models.review import EvidenceRef, Issue, ReviewCase, ReviewVersion, UploadedFile
+
+
+@dataclass(frozen=True)
+class MaterialText:
+    file: UploadedFile
+    text: str
+
+
+class ReviewRunService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def reanalyze(self, case_id: int, instruction: str | None = None) -> ReviewCase:
+        review_case = self.session.get(ReviewCase, case_id)
+        if review_case is None:
+            raise ValueError("Review case not found")
+
+        review_case.current_version += 1
+        review_case.status = "completed"
+        self.session.add(
+            ReviewVersion(
+                case_id=case_id,
+                version_number=review_case.current_version,
+                trigger="reanalyze",
+                review_request=instruction,
+                note="基础规则审计版本",
+            )
+        )
+
+        materials = self._load_materials(case_id)
+        created = self._create_process_audit_issues(review_case, materials)
+        if not created:
+            created.append(
+                self._create_issue(
+                    review_case,
+                    issue_type="contract_risk",
+                    title="需要法务人工复核合同条款",
+                    risk_level="info",
+                    description="系统已完成基础读取，但未发现可确定的日期或盖章异常。建议继续配置 AI 后执行专业律师视角审查。",
+                    suggestion="配置 AI 后点击重新审核，或使用人工标记补充重点条款。",
+                    evidence_text=None,
+                )
+            )
+
+        review_case.issue_count = (
+            self.session.scalar(select(func.count(Issue.id)).where(Issue.case_id == case_id))
+            or len(created)
+        )
+        review_case.highest_risk_level = self._highest_risk(case_id)
+        self.session.commit()
+        self.session.refresh(review_case)
+        return review_case
+
+    def _load_materials(self, case_id: int) -> list[MaterialText]:
+        files = self.session.scalars(
+            select(UploadedFile).where(UploadedFile.case_id == case_id).order_by(UploadedFile.id.asc())
+        ).all()
+        return [MaterialText(file=file, text=self._read_text(Path(file.original_path))) for file in files]
+
+    def _read_text(self, path: Path) -> str:
+        if path.suffix.lower() in {".txt", ".md"}:
+            return path.read_text(encoding="utf-8", errors="ignore")
+        if path.suffix.lower() == ".pdf":
+            try:
+                import fitz
+
+                with fitz.open(path) as document:
+                    return "\n".join(page.get_text() for page in document)
+            except Exception:
+                return ""
+        return ""
+
+    def _create_process_audit_issues(
+        self,
+        review_case: ReviewCase,
+        materials: list[MaterialText],
+    ) -> list[Issue]:
+        contract_text = "\n".join(item.text for item in materials if item.file.file_type == "contract")
+        flow_text = "\n".join(item.text for item in materials if item.file.file_type != "contract")
+        contract_date = self._extract_date(contract_text, ["合同签订日期", "签订日期", "签署日期"])
+        legal_review_date = self._extract_date(flow_text, ["法务审核", "法审", "法律审核"])
+        approval_date = self._extract_date(flow_text, ["审批通过", "签批", "批准"])
+        created: list[Issue] = []
+
+        if contract_date and legal_review_date and legal_review_date > contract_date:
+            created.append(
+                self._create_issue(
+                    review_case,
+                    issue_type="process_audit",
+                    title="法审日期晚于合同签订日期",
+                    risk_level="high",
+                    description="识别到法务审核日期晚于合同签订日期，存在先签署后法审的流程合规风险。",
+                    suggestion="请核对合同实际签署日期和法审记录，如属实应补充说明并重新履行法审前置流程。",
+                    evidence_text=f"合同签订日期：{contract_date.isoformat()}；法审日期：{legal_review_date.isoformat()}",
+                )
+            )
+
+        if contract_date and approval_date and approval_date > contract_date:
+            created.append(
+                self._create_issue(
+                    review_case,
+                    issue_type="process_audit",
+                    title="合同签订日期早于审批通过日期",
+                    risk_level="high",
+                    description="识别到合同签订日期早于审批通过日期，存在先签后批的内控流程风险。",
+                    suggestion="请核对审批通过节点和签署页日期，如属实应提交流程异常说明并补齐审批依据。",
+                    evidence_text=f"合同签订日期：{contract_date.isoformat()}；审批通过日期：{approval_date.isoformat()}",
+                )
+            )
+
+        if "乙方盖章：缺失" in contract_text or "乙方盖章缺失" in contract_text:
+            created.append(
+                self._create_issue(
+                    review_case,
+                    issue_type="process_audit",
+                    title="疑似合同盖章不齐全",
+                    risk_level="high",
+                    description="合同文本或签署页信息显示乙方盖章缺失，可能影响合同成立、证明力或后续履约追责。",
+                    suggestion="请人工核对合同签章页，确认双方签字盖章是否完整。",
+                    evidence_text="乙方盖章：缺失",
+                )
+            )
+
+        return created
+
+    def _extract_date(self, text: str, labels: list[str]) -> date | None:
+        for label in labels:
+            match = re.search(
+                rf"{label}[^\d]*(\d{{4}})[年/-](\d{{1,2}})[月/-](\d{{1,2}})",
+                text,
+            )
+            if match:
+                year, month, day = map(int, match.groups())
+                return date(year, month, day)
+        return None
+
+    def _create_issue(
+        self,
+        review_case: ReviewCase,
+        issue_type: str,
+        title: str,
+        risk_level: str,
+        description: str,
+        suggestion: str,
+        evidence_text: str | None,
+    ) -> Issue:
+        issue = Issue(
+            case_id=review_case.id,
+            issue_type=issue_type,
+            source="ai",
+            risk_level=risk_level,
+            title=title,
+            description=description,
+            suggestion=suggestion,
+            status="pending",
+            review_version=review_case.current_version,
+        )
+        self.session.add(issue)
+        self.session.flush()
+        if evidence_text:
+            self.session.add(EvidenceRef(issue_id=issue.id, original_text=evidence_text, confidence=0.9))
+        return issue
+
+    def _highest_risk(self, case_id: int) -> str | None:
+        levels = [
+            issue.risk_level
+            for issue in self.session.scalars(select(Issue).where(Issue.case_id == case_id)).all()
+        ]
+        for level in ["high", "medium", "low", "info"]:
+            if level in levels:
+                return level
+        return None
