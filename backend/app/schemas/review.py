@@ -44,6 +44,39 @@ class UploadedFileRead(BaseModel):
     uploaded_at: datetime
 
 
+class OcrBlockRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    text: str
+    bbox: list[float] | None
+    confidence: float | None
+    order_index: int
+    source: str
+
+
+class DocumentPageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    page_number: int
+    image_path: str | None
+    width: float | None
+    height: float | None
+    has_text_layer: bool
+    ocr_status: str
+    blocks: list[OcrBlockRead]
+
+
+class CaseDocumentRead(BaseModel):
+    id: int
+    file_type: str
+    file_name: str
+    parse_method: str | None
+    parse_status: str
+    pages: list[DocumentPageRead]
+
+
 class EvidenceRefRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

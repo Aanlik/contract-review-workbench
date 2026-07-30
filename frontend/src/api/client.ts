@@ -1,6 +1,7 @@
 import type {
   AiConversation,
   AiSettings,
+  CaseDocument,
   EvidenceRef,
   Issue,
   IssueUpdatePayload,
@@ -81,6 +82,33 @@ function fromSnakeCaseConversation(item: any): AiConversation {
   };
 }
 
+function fromSnakeCaseDocument(item: any): CaseDocument {
+  return {
+    id: item.id,
+    fileType: item.file_type,
+    fileName: item.file_name,
+    parseMethod: item.parse_method,
+    parseStatus: item.parse_status,
+    pages: (item.pages ?? []).map((page: any) => ({
+      id: page.id,
+      pageNumber: page.page_number,
+      imagePath: page.image_path,
+      width: page.width,
+      height: page.height,
+      hasTextLayer: page.has_text_layer,
+      ocrStatus: page.ocr_status,
+      blocks: (page.blocks ?? []).map((block: any) => ({
+        id: block.id,
+        text: block.text,
+        bbox: block.bbox,
+        confidence: block.confidence,
+        orderIndex: block.order_index,
+        source: block.source,
+      })),
+    })),
+  };
+}
+
 async function parseJsonResponse(response: Response) {
   if (!response.ok) {
     const message = await response.text();
@@ -140,6 +168,12 @@ export async function listCaseFiles(caseId: number): Promise<UploadedFile[]> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/files`);
   const data = await parseJsonResponse(response);
   return data.map(fromSnakeCaseFile);
+}
+
+export async function listCaseDocuments(caseId: number): Promise<CaseDocument[]> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/documents`);
+  const data = await parseJsonResponse(response);
+  return data.map(fromSnakeCaseDocument);
 }
 
 export async function listIssues(caseId: number): Promise<Issue[]> {

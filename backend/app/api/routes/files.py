@@ -2,13 +2,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.routes.cases import get_active_case
 from app.core.database import get_session
 from app.core.storage import StorageService
 from app.models.review import UploadedFile
-from app.schemas.review import UploadedFileRead
+from app.schemas.review import CaseDocumentRead, DocumentPageRead, OcrBlockRead, UploadedFileRead
 from app.services.file_ingest_service import FileIngestService
 
 router = APIRouter()
@@ -40,6 +40,46 @@ def list_case_files(case_id: int, session: Session = Depends(get_session)):
         .where(UploadedFile.case_id == case_id)
         .order_by(UploadedFile.uploaded_at.asc(), UploadedFile.id.asc())
     ).all()
+
+
+@router.get("/cases/{case_id}/documents", response_model=list[CaseDocumentRead])
+def list_case_documents(case_id: int, session: Session = Depends(get_session)):
+    get_active_case(case_id, session)
+    files = session.scalars(
+        select(UploadedFile)
+        .where(UploadedFile.case_id == case_id)
+        .options(selectinload(UploadedFile.pages).selectinload("*"))
+        .order_by(UploadedFile.uploaded_at.asc(), UploadedFile.id.asc())
+    ).all()
+    documents: list[CaseDocumentRead] = []
+    for uploaded in files:
+        pages = sorted(uploaded.pages, key=lambda page: page.page_number)
+        documents.append(
+            CaseDocumentRead(
+                id=uploaded.id,
+                file_type=uploaded.file_type,
+                file_name=uploaded.file_name,
+                parse_method=uploaded.parse_method,
+                parse_status=uploaded.parse_status,
+                pages=[
+                    DocumentPageRead(
+                        id=page.id,
+                        page_number=page.page_number,
+                        image_path=page.image_path,
+                        width=page.width,
+                        height=page.height,
+                        has_text_layer=page.has_text_layer,
+                        ocr_status=page.ocr_status,
+                        blocks=[
+                            OcrBlockRead.model_validate(block)
+                            for block in sorted(page.ocr_blocks, key=lambda item: item.order_index)
+                        ],
+                    )
+                    for page in pages
+                ],
+            )
+        )
+    return documents
 
 
 @router.post(

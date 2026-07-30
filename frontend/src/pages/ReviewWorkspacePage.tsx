@@ -6,6 +6,7 @@ import {
   createManualIssue,
   exportCase,
   getCaseChat,
+  listCaseDocuments,
   listCaseFiles,
   listIssues,
   reanalyzeCase,
@@ -15,6 +16,7 @@ import {
 } from "../api/client";
 import type {
   AiMessage,
+  CaseDocument,
   Issue,
   IssueUpdatePayload,
   ManualIssuePayload,
@@ -34,6 +36,7 @@ type ReviewWorkspacePageProps = {
 export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePageProps) {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [documents, setDocuments] = useState<CaseDocument[]>([]);
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [status, setStatus] = useState("");
   const [selectedIssueId, setSelectedIssueId] = useState<number | undefined>(
@@ -59,6 +62,10 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
     setFiles(await listCaseFiles(caseId));
   }
 
+  async function refreshDocuments() {
+    setDocuments(await listCaseDocuments(caseId));
+  }
+
   async function refreshChat() {
     const chat = await getCaseChat(caseId);
     setMessages(chat.messages);
@@ -67,6 +74,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   useEffect(() => {
     refreshIssues().catch((error) => setStatus(error.message));
     refreshFiles().catch(() => setFiles([]));
+    refreshDocuments().catch(() => setDocuments([]));
     refreshChat().catch(() => setMessages([]));
   }, [caseId]);
 
@@ -74,6 +82,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
     const next = await createManualIssue(caseId, payload);
     await refreshIssues();
     await refreshFiles();
+    await refreshDocuments();
     setSelectedIssueId(next.id);
   }
 
@@ -132,7 +141,12 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
           <IssueList issues={issues} selectedIssueId={selectedIssueId} onSelect={setSelectedIssueId} />
         </aside>
         <section className="evidence-column">
-          <EvidenceViewer files={files} issue={selectedIssue} onCreateManualIssue={handleCreateManualIssue} />
+          <EvidenceViewer
+            documents={documents}
+            files={files}
+            issue={selectedIssue}
+            onCreateManualIssue={handleCreateManualIssue}
+          />
         </section>
         <aside className="detail-column">
           <IssueDetail issue={selectedIssue} onReanalyze={handleReanalyze} onSave={handleSaveIssue} />

@@ -58,3 +58,21 @@ def test_list_case_files_returns_uploaded_materials(db_session):
     files = response.json()
     assert files[0]["file_name"] == "sign.txt"
     assert files[0]["parse_status"] == "parsed"
+
+
+def test_list_case_documents_returns_pages_and_blocks(db_session):
+    client = make_client(db_session)
+    case = client.post("/api/cases", json={"title": "文档文本块测试"}).json()
+    client.post(
+        f"/api/cases/{case['id']}/files",
+        data={"file_type": "contract"},
+        files={"file": ("contract.txt", "合同签订日期：2026年7月18日".encode(), "text/plain")},
+    )
+
+    response = client.get(f"/api/cases/{case['id']}/documents")
+
+    assert response.status_code == 200
+    documents = response.json()
+    assert documents[0]["file_name"] == "contract.txt"
+    assert documents[0]["pages"][0]["page_number"] == 1
+    assert documents[0]["pages"][0]["blocks"][0]["text"] == "合同签订日期：2026年7月18日"

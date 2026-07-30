@@ -182,12 +182,37 @@ textarea {
 .empty-state,
 .chat-history,
 .evidence-card,
-.material-list {
+.material-list,
+.document-text-list {
   background: #f8fafc;
   border: 1px solid #e1e6ee;
   border-radius: 6px;
   margin-top: 12px;
   padding: 12px;
+}
+
+.document-text {
+  border-top: 1px solid #e1e6ee;
+  padding: 10px 0;
+}
+
+.document-text summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.page-text {
+  background: white;
+  border: 1px solid #e7ebf2;
+  border-radius: 6px;
+  margin-top: 8px;
+  padding: 10px;
+}
+
+.page-text p {
+  line-height: 1.65;
+  margin: 8px 0 0;
+  white-space: pre-wrap;
 }
 
 .material-row {

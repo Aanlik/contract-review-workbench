@@ -18,6 +18,35 @@ export type UploadedFile = {
   parseStatus: string;
 };
 
+export type OcrBlock = {
+  id: number;
+  text: string;
+  bbox: number[] | null;
+  confidence: number | null;
+  orderIndex: number;
+  source: string;
+};
+
+export type DocumentPage = {
+  id: number;
+  pageNumber: number;
+  imagePath: string | null;
+  width: number | null;
+  height: number | null;
+  hasTextLayer: boolean;
+  ocrStatus: string;
+  blocks: OcrBlock[];
+};
+
+export type CaseDocument = {
+  id: number;
+  fileType: string;
+  fileName: string;
+  parseMethod: string | null;
+  parseStatus: string;
+  pages: DocumentPage[];
+};
+
 export type EvidenceRef = {
   id: number;
   fileId: number | null;

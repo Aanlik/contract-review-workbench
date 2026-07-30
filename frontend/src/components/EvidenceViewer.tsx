@@ -1,9 +1,10 @@
 import { useState } from "react";
 
-import type { EvidenceRef, Issue, ManualIssuePayload, UploadedFile } from "../api/types";
+import type { CaseDocument, EvidenceRef, Issue, ManualIssuePayload, UploadedFile } from "../api/types";
 
 type EvidenceViewerProps = {
   issue?: Issue;
+  documents: CaseDocument[];
   files: UploadedFile[];
   onCreateManualIssue: (payload: ManualIssuePayload) => void;
 };
@@ -20,7 +21,7 @@ function EvidenceCard({ evidence }: { evidence: EvidenceRef }) {
   );
 }
 
-export function EvidenceViewer({ files, issue, onCreateManualIssue }: EvidenceViewerProps) {
+export function EvidenceViewer({ documents, files, issue, onCreateManualIssue }: EvidenceViewerProps) {
   const [evidenceText, setEvidenceText] = useState("");
   const [title, setTitle] = useState("人工新增问题");
 
@@ -71,6 +72,32 @@ export function EvidenceViewer({ files, issue, onCreateManualIssue }: EvidenceVi
       ) : (
         <div className="document-placeholder">选择问题后展示合同、签报或会议纪要中的证据位置。</div>
       )}
+      <div className="document-text-list">
+        <h3>解析原文</h3>
+        {documents.length ? (
+          documents.map((document) => (
+            <details className="document-text" key={document.id} open={document.fileType === "contract"}>
+              <summary>
+                {document.fileName} · {document.fileType} · {document.parseStatus}
+              </summary>
+              {document.pages.length ? (
+                document.pages.map((page) => (
+                  <div className="page-text" key={page.id}>
+                    <b>第 {page.pageNumber} 页</b>
+                    {page.blocks.map((block) => (
+                      <p key={block.id}>{block.text}</p>
+                    ))}
+                  </div>
+                ))
+              ) : (
+                <p>暂无可展示文本块。</p>
+              )}
+            </details>
+          ))
+        ) : (
+          <p>暂无解析原文。</p>
+        )}
+      </div>
     </div>
   );
 }
