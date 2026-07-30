@@ -56,7 +56,7 @@ jobs:
       - name: Setup distribution
         run: |
           New-Item -ItemType Directory -Force -Path "dist\contract-review\data\storage" | Out-Null
-          echo # Contract Review Workbench > dist\contract-review\.env
+          Set-Content -Path "dist\contract-review\.env" -Value "# Contract Review Workbench" -Encoding UTF8
 
       - name: Create start script
         run: |
