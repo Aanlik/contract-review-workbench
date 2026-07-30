@@ -6,7 +6,7 @@
 
 ```bash
 cd backend
-/Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 -m pip install -e ".[dev]"
+python3 -m pip install -e ".[dev]"
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -32,8 +32,7 @@ npm run dev
 
 ```bash
 cd backend
-PYTHON_BIN=/Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  bash scripts/install_ocr_deps.sh rapid
+bash scripts/install_ocr_deps.sh rapid
 ```
 
 完整调参说明见 `docs/ocr-local-setup.md`。

@@ -6,24 +6,21 @@
 
 ```bash
 cd backend
-PYTHON_BIN=/Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  bash scripts/install_ocr_deps.sh rapid
+bash scripts/install_ocr_deps.sh rapid
 ```
 
 如果 RapidOCR 新包在本机环境不可用，可以退回旧 onnxruntime 包：
 
 ```bash
 cd backend
-PYTHON_BIN=/Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  bash scripts/install_ocr_deps.sh rapid-legacy
+bash scripts/install_ocr_deps.sh rapid-legacy
 ```
 
 PaddleOCR 适合中文合同准确率优先的场景，但依赖更重：
 
 ```bash
 cd backend
-PYTHON_BIN=/Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  bash scripts/install_ocr_deps.sh paddle
+bash scripts/install_ocr_deps.sh paddle
 ```
 
 包名依据 PyPI 当前发布信息：`paddleocr`、`rapidocr`、`rapidocr-onnxruntime`。
@@ -49,18 +46,15 @@ PYTHON_BIN=/Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies
 准备一份真实扫描合同 PDF 后运行：
 
 ```bash
-PYTHONPATH=backend /Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  backend/scripts/ocr_smoke_test.py /path/to/scanned-contract.pdf --engine rapid --dpi 260
+PYTHONPATH=backend python3 backend/scripts/ocr_smoke_test.py /path/to/scanned-contract.pdf --engine rapid --dpi 260
 ```
 
 对比不同参数：
 
 ```bash
-PYTHONPATH=backend /Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  backend/scripts/ocr_smoke_test.py /path/to/scanned-contract.pdf --engine rapid --dpi 320
+PYTHONPATH=backend python3 backend/scripts/ocr_smoke_test.py /path/to/scanned-contract.pdf --engine rapid --dpi 320
 
-PYTHONPATH=backend /Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  backend/scripts/ocr_smoke_test.py /path/to/scanned-contract.pdf --engine rapid --dpi 320 --no-preprocess
+PYTHONPATH=backend python3 backend/scripts/ocr_smoke_test.py /path/to/scanned-contract.pdf --engine rapid --dpi 320 --no-preprocess
 ```
 
 观察输出：
