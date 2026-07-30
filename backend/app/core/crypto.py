@@ -8,25 +8,46 @@ in the data directory.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from cryptography.fernet import Fernet
 
 
 _MASTER_KEY_ENV = "CONTRACT_REVIEW_MASTER_KEY"
-_KEY_FILE = Path("./data/.master_key")
+
+
+def _get_key_file() -> Path:
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).parent
+    else:
+        base = Path.cwd()
+    key_dir = base / "data"
+    key_dir.mkdir(parents=True, exist_ok=True)
+    return key_dir / ".master_key"
+
+
+_KEY_FILE: Path | None = None
 
 
 def _get_or_create_master_key() -> bytes:
+    global _KEY_FILE
+    if _KEY_FILE is None:
+        _KEY_FILE = _get_key_file()
+
     env_key = os.environ.get(_MASTER_KEY_ENV)
     if env_key:
         return env_key.encode()
-    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
     if _KEY_FILE.exists():
         return _KEY_FILE.read_bytes().strip()
+
     key = Fernet.generate_key()
     _KEY_FILE.write_bytes(key + b"\n")
-    os.chmod(_KEY_FILE, 0o600)
+    try:
+        os.chmod(_KEY_FILE, 0o600)
+    except OSError:
+        pass  # Windows doesn't support chmod the same way
     return key
 
 

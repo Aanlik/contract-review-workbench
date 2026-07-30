@@ -1,4 +1,6 @@
+import sys
 from collections.abc import Generator
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -6,14 +8,30 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import settings
 
 
-if settings.database_url.startswith("sqlite:///"):
-    database_path = settings.database_url.removeprefix("sqlite:///")
-    if database_path and database_path != ":memory:":
-        from pathlib import Path
+def _resolve_db_url(url: str) -> str:
+    """Resolve SQLite URL to an absolute path, handling cross-platform differences."""
+    if not url.startswith("sqlite:///"):
+        return url
 
-        Path(database_path).parent.mkdir(parents=True, exist_ok=True)
+    raw_path = url.removeprefix("sqlite:///")
 
-engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
+    if raw_path == ":memory:":
+        return url
+
+    p = Path(raw_path)
+    if not p.is_absolute():
+        if getattr(sys, "frozen", False):
+            base = Path(sys.executable).parent
+        else:
+            base = Path.cwd()
+        p = (base / p).resolve()
+
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{p.as_posix()}"
+
+
+resolved_url = _resolve_db_url(settings.database_url)
+engine = create_engine(resolved_url, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

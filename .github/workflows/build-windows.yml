@@ -1,0 +1,81 @@
+name: Build Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Python dependencies
+        run: |
+          pip install fastapi "uvicorn[standard]" sqlalchemy pydantic-settings python-multipart httpx pymupdf pillow python-docx cryptography alembic
+          pip install pyinstaller
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Build Windows executable
+        run: |
+          pyinstaller backend/contract_review.spec --clean --noconfirm
+
+      - name: Setup distribution
+        run: |
+          mkdir dist\contract-review\data\storage
+          echo # Contract Review Workbench > dist\contract-review\.env
+
+      - name: Create start script
+        run: |
+          $content = @'
+          @echo off
+          title Contract Review Workbench
+          echo ==========================================
+          echo   Contract Review Workbench
+          echo   http://127.0.0.1:8000
+          echo ==========================================
+          echo.
+          contract-review.exe
+          pause
+          '@
+          Set-Content -Path "dist\contract-review\start.bat" -Value $content
+
+      - name: Create ZIP archive
+        run: |
+          Compress-Archive -Path "dist\contract-review\*" -DestinationPath "contract-review-windows.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-review-windows
+          path: contract-review-windows.zip
+          retention-days: 30
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: contract-review-windows.zip
+          draft: false
+          prerelease: false
