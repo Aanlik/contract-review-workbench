@@ -15,17 +15,24 @@ from app.models import review  # noqa: F401
 def _find_frontend_dist() -> Path | None:
     """Locate the frontend dist directory in various packaging scenarios."""
     candidates = []
+
     if getattr(sys, "frozen", False):
+        # PyInstaller single-file: data extracted to _MEIPASS
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "frontend" / "dist")
+        # PyInstaller onedir: data in _internal/
         base = Path(sys.executable).parent
-        # PyInstaller onefile: data is in _internal/
-        internal = base / "_internal"
-        candidates.append(internal / "frontend" / "dist")
+        candidates.append(base / "_internal" / "frontend" / "dist")
         candidates.append(base / "frontend" / "dist")
+
+    # Dev mode
     base = Path.cwd()
     candidates.append(base / "frontend" / "dist")
     candidates.append(base / "dist")
     here = Path(__file__).resolve().parent
     candidates.append(here.parent.parent / "frontend" / "dist")
+
     for p in candidates:
         if p.is_dir() and (p / "index.html").exists():
             return p
