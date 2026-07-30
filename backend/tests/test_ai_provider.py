@@ -12,7 +12,7 @@ def test_contract_review_prompt_requires_structured_json():
     assert "甲方不得解除合同" in joined
 
 
-def test_mimo_provider_uses_api_key_header(monkeypatch):
+def test_provider_uses_bearer_auth_header(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -41,13 +41,12 @@ def test_mimo_provider_uses_api_key_header(monkeypatch):
     monkeypatch.setattr("app.services.ai_provider.httpx.Client", FakeClient)
     provider = OpenAICompatibleProvider(
         AiSettings(
-            base_url="https://api.xiaomimimo.com/v1",
-            api_key="sk-mimo",
-            model="mimo-v2.5-pro",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test-key",
+            model="test-model",
         )
     )
 
     assert provider.chat([{"role": "user", "content": "hello"}]) == "ok"
-    assert captured["url"] == "https://api.xiaomimimo.com/v1/chat/completions"
-    assert captured["headers"]["api-key"] == "sk-mimo"
-    assert "Authorization" not in captured["headers"]
+    assert captured["url"] == "https://api.example.com/v1/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer sk-test-key"

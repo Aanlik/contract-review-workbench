@@ -1,7 +1,5 @@
 from typing import Literal, TypedDict
 
-import time
-
 import httpx
 
 from app.schemas.settings import AiSettings
@@ -40,8 +38,6 @@ class OpenAICompatibleProvider:
         raise last_exc  # type: ignore[misc]
 
     def _headers(self) -> dict[str, str]:
-        if "xiaomimimo.com" in self.settings.base_url:
-            return {"api-key": self.settings.api_key}
         return {"Authorization": f"Bearer {self.settings.api_key}"}
 
 
