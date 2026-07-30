@@ -41,6 +41,7 @@ class ReviewRunService:
 
         materials = self._load_materials(case_id)
         created = self._create_process_audit_issues(review_case, materials)
+        created.extend(self._create_ocr_gap_issues(review_case, materials))
         created.extend(self._create_ai_contract_issues(review_case, materials, instruction))
         if not created:
             created.append(
@@ -134,6 +135,27 @@ class ReviewRunService:
                 )
             )
 
+        return created
+
+    def _create_ocr_gap_issues(
+        self,
+        review_case: ReviewCase,
+        materials: list[MaterialText],
+    ) -> list[Issue]:
+        created: list[Issue] = []
+        for material in materials:
+            if material.file.file_type == "contract" and not material.text.strip():
+                created.append(
+                    self._create_issue(
+                        review_case,
+                        issue_type="contract_risk",
+                        title="合同扫描件 OCR 未完成",
+                        risk_level="info",
+                        description="该合同文件未能抽取到可审查文本，可能是纯图片扫描件且本地 OCR 引擎尚未安装或未完成识别。",
+                        suggestion="请安装并启用 PaddleOCR/RapidOCR，或先上传可复制文字的 PDF/TXT 版本，也可以使用人工标记补充关键条款。",
+                        evidence_text=material.file.file_name,
+                    )
+                )
         return created
 
     def _create_ai_contract_issues(

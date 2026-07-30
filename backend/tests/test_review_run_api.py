@@ -116,3 +116,28 @@ def test_reanalyze_uses_configured_ai_to_create_contract_risk(db_session, tmp_pa
     assert response.status_code == 201
     issues = client.get(f"/api/cases/{review_case.id}/issues").json()
     assert any(issue["title"] == "解除权限制过严" for issue in issues)
+
+
+def test_reanalyze_flags_scanned_contract_when_text_is_unavailable(db_session, tmp_path):
+    review_case = ReviewCase(title="扫描件合同")
+    db_session.add(review_case)
+    db_session.commit()
+    db_session.refresh(review_case)
+    image = tmp_path / "contract.png"
+    image.write_bytes(b"not real image text")
+    db_session.add(
+        UploadedFile(
+            case_id=review_case.id,
+            file_type="contract",
+            file_name="contract.png",
+            original_path=str(image),
+            parse_status="uploaded",
+        )
+    )
+    db_session.commit()
+
+    client = make_client(db_session)
+    response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "首次审核"})
+    assert response.status_code == 201
+    issues = client.get(f"/api/cases/{review_case.id}/issues").json()
+    assert any(issue["title"] == "合同扫描件 OCR 未完成" for issue in issues)
