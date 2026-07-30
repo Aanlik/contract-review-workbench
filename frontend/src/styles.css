@@ -1,0 +1,123 @@
+:root {
+  color: #20242c;
+  background: #f3f5f8;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #18202b;
+  color: white;
+  padding: 20px;
+}
+
+.brand {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+
+.nav-item {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+  display: block;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.nav-item.active,
+.nav-item:hover {
+  background: #263244;
+  color: white;
+}
+
+.main-panel {
+  padding: 24px;
+}
+
+.page-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.page-header h1 {
+  font-size: 24px;
+  margin: 0;
+}
+
+.table {
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.table-row {
+  align-items: center;
+  background: white;
+  border: 0;
+  border-bottom: 1px solid #e6e9ef;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr 120px 120px 120px;
+  padding: 14px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.form-grid {
+  display: grid;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid textarea {
+  border: 1px solid #ccd3df;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.workspace-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 280px minmax(360px, 1fr) 360px;
+}
+
+.issue-column,
+.evidence-column,
+.detail-column {
+  background: white;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  min-height: 70vh;
+  padding: 16px;
+}
