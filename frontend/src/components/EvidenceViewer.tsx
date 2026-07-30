@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { EvidenceRef, Issue, ManualIssuePayload } from "../api/types";
 
 type EvidenceViewerProps = {
@@ -18,24 +20,37 @@ function EvidenceCard({ evidence }: { evidence: EvidenceRef }) {
 }
 
 export function EvidenceViewer({ issue, onCreateManualIssue }: EvidenceViewerProps) {
+  const [evidenceText, setEvidenceText] = useState("");
+  const [title, setTitle] = useState("人工新增问题");
+
   return (
     <div>
       <header className="panel-header">
         <h2>合同与证据</h2>
-        <button
-          type="button"
-          onClick={() =>
-            onCreateManualIssue({
-              title: "人工新增问题",
-              riskLevel: "medium",
-              description: "请补充人工标记说明",
-              evidenceText: "用户手动选中的原文片段",
-            })
-          }
-        >
+        <button type="button" onClick={() => {
+          onCreateManualIssue({
+            title,
+            riskLevel: "medium",
+            description: "请补充人工标记说明",
+            evidenceText: evidenceText || "用户手动选中的原文片段",
+          });
+          setEvidenceText("");
+        }}>
           新增人工标记
         </button>
       </header>
+      <div className="manual-mark-form">
+        <input
+          onChange={(event) => setTitle(event.target.value)}
+          placeholder="人工问题标题"
+          value={title}
+        />
+        <textarea
+          onChange={(event) => setEvidenceText(event.target.value)}
+          placeholder="粘贴或输入需要标记的合同/流程材料原文"
+          value={evidenceText}
+        />
+      </div>
       {issue?.evidenceRefs?.length ? (
         issue.evidenceRefs.map((evidence) => <EvidenceCard evidence={evidence} key={evidence.id} />)
       ) : (

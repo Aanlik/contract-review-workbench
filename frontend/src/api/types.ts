@@ -10,6 +10,14 @@ export type ReviewCase = {
   updatedAt: string;
 };
 
+export type UploadedFile = {
+  id: number;
+  caseId: number;
+  fileType: string;
+  fileName: string;
+  parseStatus: string;
+};
+
 export type EvidenceRef = {
   id: number;
   fileId: number | null;
@@ -41,4 +49,38 @@ export type ManualIssuePayload = {
   description: string;
   suggestion?: string;
   evidenceText?: string;
+};
+
+export type IssueUpdatePayload = Partial<{
+  title: string;
+  riskLevel: "high" | "medium" | "low" | "info";
+  description: string;
+  suggestion: string;
+  replacementClause: string;
+  status: "pending" | "confirmed" | "modified" | "rejected" | "needs_review";
+}>;
+
+export type AiMessage = {
+  id: number;
+  role: "user" | "assistant" | "system";
+  content: string;
+  model: string | null;
+  isApplied: boolean;
+  createdAt: string;
+};
+
+export type AiConversation = {
+  id: number;
+  caseId: number;
+  issueId: number | null;
+  scope: string;
+  messages: AiMessage[];
+};
+
+export type AiSettings = {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  temperature: number;
+  timeoutSeconds: number;
 };

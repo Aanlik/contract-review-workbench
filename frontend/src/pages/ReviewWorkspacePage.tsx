@@ -1,41 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { Issue, ManualIssuePayload } from "../api/types";
+import {
+  createManualIssue,
+  exportCase,
+  getCaseChat,
+  listIssues,
+  reanalyzeCase,
+  sendCaseChat,
+  sendIssueChat,
+  updateIssue,
+} from "../api/client";
+import type { AiMessage, Issue, IssueUpdatePayload, ManualIssuePayload } from "../api/types";
 import { AiChatPanel } from "../components/AiChatPanel";
 import { EvidenceViewer } from "../components/EvidenceViewer";
 import { IssueDetail } from "../components/IssueDetail";
 import { IssueList } from "../components/IssueList";
 import { loadWorkspaceState, saveWorkspaceState } from "../state/workspace";
 
-const sampleIssues: Issue[] = [
-  {
-    id: 1,
-    title: "法审晚于合同签订日期",
-    issueType: "process_audit",
-    source: "ai",
-    riskLevel: "high",
-    status: "pending",
-    description: "OA 签报中的法务审核时间晚于合同签订日期，存在先签后审风险。",
-    suggestion: "请核对合同实际签署时间，并补充法审前置审批证据。",
-    evidenceRefs: [
-      {
-        id: 1,
-        fileId: null,
-        pageNumber: 3,
-        ocrBlockId: null,
-        originalText: "法务审核：2026-07-20；合同签订日期：2026-07-18",
-        bbox: null,
-        note: "日期比对异常",
-        confidence: 0.92,
-      },
-    ],
-  },
-];
+type ReviewWorkspacePageProps = {
+  caseId: number;
+  onCaseChanged: () => void;
+};
 
-export function ReviewWorkspacePage() {
-  const [issues, setIssues] = useState<Issue[]>(sampleIssues);
+export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePageProps) {
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [messages, setMessages] = useState<AiMessage[]>([]);
+  const [status, setStatus] = useState("");
   const [selectedIssueId, setSelectedIssueId] = useState<number | undefined>(
-    loadWorkspaceState().selectedIssueId ?? sampleIssues[0]?.id,
+    loadWorkspaceState().selectedIssueId,
   );
   const selectedIssue = useMemo(
     () => issues.find((issue) => issue.id === selectedIssueId),
@@ -44,50 +36,80 @@ export function ReviewWorkspacePage() {
 
   useEffect(() => {
     const state = loadWorkspaceState();
-    saveWorkspaceState({ ...state, selectedIssueId });
-  }, [selectedIssueId]);
+    saveWorkspaceState({ ...state, selectedCaseId: caseId, selectedIssueId });
+  }, [caseId, selectedIssueId]);
 
-  function createManualIssue(payload: ManualIssuePayload) {
-    const next: Issue = {
-      id: Math.max(0, ...issues.map((issue) => issue.id)) + 1,
-      title: payload.title,
-      issueType: "manual_mark",
-      source: "manual",
-      riskLevel: payload.riskLevel,
-      status: "pending",
-      description: payload.description,
-      suggestion: payload.suggestion,
-      evidenceRefs: payload.evidenceText
-        ? [
-            {
-              id: Date.now(),
-              fileId: null,
-              pageNumber: null,
-              ocrBlockId: null,
-              originalText: payload.evidenceText,
-              bbox: null,
-              note: "人工标记",
-              confidence: null,
-            },
-          ]
-        : [],
-    };
-    setIssues((current) => [...current, next]);
+  async function refreshIssues() {
+    const nextIssues = await listIssues(caseId);
+    setIssues(nextIssues);
+    if (!selectedIssueId && nextIssues[0]) setSelectedIssueId(nextIssues[0].id);
+  }
+
+  async function refreshChat() {
+    const chat = await getCaseChat(caseId);
+    setMessages(chat.messages);
+  }
+
+  useEffect(() => {
+    refreshIssues().catch((error) => setStatus(error.message));
+    refreshChat().catch(() => setMessages([]));
+  }, [caseId]);
+
+  async function handleCreateManualIssue(payload: ManualIssuePayload) {
+    const next = await createManualIssue(caseId, payload);
+    await refreshIssues();
     setSelectedIssueId(next.id);
   }
 
+  async function handleSaveIssue(issueId: number, payload: IssueUpdatePayload) {
+    const saved = await updateIssue(issueId, payload);
+    setIssues((current) => current.map((issue) => (issue.id === saved.id ? saved : issue)));
+    setStatus("问题已保存。");
+  }
+
+  async function handleReanalyze() {
+    setStatus("正在重新审核...");
+    await reanalyzeCase(caseId, selectedIssue ? `围绕问题重新分析：${selectedIssue.title}` : undefined);
+    await refreshIssues();
+    onCaseChanged();
+    setStatus("重新审核完成。");
+  }
+
+  async function handleSendChat(message: string) {
+    const chat = selectedIssue
+      ? await sendIssueChat(caseId, selectedIssue.id, message)
+      : await sendCaseChat(caseId, message);
+    setMessages(chat.messages);
+  }
+
+  async function handleExport() {
+    const result = await exportCase(caseId);
+    setStatus(`报告已导出：${result.filePath}`);
+  }
+
   return (
-    <section className="workspace-grid">
-      <aside className="issue-column">
-        <IssueList issues={issues} selectedIssueId={selectedIssueId} onSelect={setSelectedIssueId} />
-      </aside>
-      <section className="evidence-column">
-        <EvidenceViewer issue={selectedIssue} onCreateManualIssue={createManualIssue} />
+    <>
+      <div className="workspace-actions">
+        <button onClick={handleReanalyze} type="button">整份合同重新审核</button>
+        <button onClick={handleExport} type="button">导出报告</button>
+        {status && <span>{status}</span>}
+      </div>
+      <section className="workspace-grid">
+        <aside className="issue-column">
+          <IssueList issues={issues} selectedIssueId={selectedIssueId} onSelect={setSelectedIssueId} />
+        </aside>
+        <section className="evidence-column">
+          <EvidenceViewer issue={selectedIssue} onCreateManualIssue={handleCreateManualIssue} />
+        </section>
+        <aside className="detail-column">
+          <IssueDetail issue={selectedIssue} onReanalyze={handleReanalyze} onSave={handleSaveIssue} />
+          <AiChatPanel
+            messages={messages}
+            onSend={handleSendChat}
+            scopeLabel={selectedIssue ? `当前问题：${selectedIssue.title}` : "任务级对话"}
+          />
+        </aside>
       </section>
-      <aside className="detail-column">
-        <IssueDetail issue={selectedIssue} />
-        <AiChatPanel scopeLabel={selectedIssue ? `当前问题：${selectedIssue.title}` : "任务级对话"} />
-      </aside>
-    </section>
+    </>
   );
 }

@@ -77,14 +77,19 @@ textarea {
 .table-row {
   align-items: center;
   background: white;
-  border: 0;
   border-bottom: 1px solid #e6e9ef;
-  cursor: pointer;
   display: grid;
-  grid-template-columns: 1fr 120px 120px 120px;
+  grid-template-columns: 1fr 120px 120px 120px 220px;
   padding: 14px 16px;
   text-align: left;
   width: 100%;
+}
+
+.row-actions,
+.workspace-actions,
+.manual-mark-form {
+  display: flex;
+  gap: 8px;
 }
 
 .form-grid {
@@ -110,6 +115,11 @@ textarea {
   display: grid;
   gap: 16px;
   grid-template-columns: 280px minmax(360px, 1fr) 360px;
+}
+
+.workspace-actions {
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 .issue-column,
@@ -188,4 +198,27 @@ textarea {
 .issue-detail label {
   display: grid;
   gap: 6px;
+}
+
+.manual-mark-form {
+  flex-direction: column;
+  margin: 12px 0;
+}
+
+.manual-mark-form input,
+.manual-mark-form textarea,
+.detail-head input {
+  border: 1px solid #ccd3df;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.chat-message {
+  border-bottom: 1px solid #e1e6ee;
+  padding: 8px 0;
+}
+
+.chat-message p,
+.status-line {
+  margin: 4px 0 0;
 }
