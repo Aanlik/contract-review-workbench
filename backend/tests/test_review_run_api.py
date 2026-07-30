@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.core.database import get_session
 from app.main import create_app
-from app.models.review import AppSetting, ReviewCase, UploadedFile
+from app.models.review import AppSetting, DocumentPage, OcrBlock, ReviewCase, UploadedFile
 
 
 def make_client(db_session):
@@ -141,3 +141,55 @@ def test_reanalyze_flags_scanned_contract_when_text_is_unavailable(db_session, t
     assert response.status_code == 201
     issues = client.get(f"/api/cases/{review_case.id}/issues").json()
     assert any(issue["title"] == "合同扫描件 OCR 未完成" for issue in issues)
+
+
+def test_reanalyze_uses_persisted_ocr_blocks_when_source_file_is_missing(db_session, tmp_path):
+    review_case = ReviewCase(title="OCR 入库审核")
+    db_session.add(review_case)
+    db_session.commit()
+    db_session.refresh(review_case)
+    missing_contract = tmp_path / "missing-contract.txt"
+    missing_flow = tmp_path / "missing-flow.txt"
+    contract_file = UploadedFile(
+        case_id=review_case.id,
+        file_type="contract",
+        file_name="contract.txt",
+        original_path=str(missing_contract),
+        parse_status="parsed",
+    )
+    flow_file = UploadedFile(
+        case_id=review_case.id,
+        file_type="sign_report",
+        file_name="sign.txt",
+        original_path=str(missing_flow),
+        parse_status="parsed",
+    )
+    db_session.add_all([contract_file, flow_file])
+    db_session.flush()
+    contract_page = DocumentPage(file_id=contract_file.id, page_number=1, ocr_status="completed")
+    flow_page = DocumentPage(file_id=flow_file.id, page_number=1, ocr_status="completed")
+    db_session.add_all([contract_page, flow_page])
+    db_session.flush()
+    db_session.add_all(
+        [
+            OcrBlock(
+                page_id=contract_page.id,
+                text="合同签订日期：2026年7月18日",
+                source="pdf_text",
+                order_index=0,
+            ),
+            OcrBlock(
+                page_id=flow_page.id,
+                text="法务审核：2026年7月20日 同意",
+                source="pdf_text",
+                order_index=0,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    client = make_client(db_session)
+    response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "看日期"})
+    assert response.status_code == 201
+    issues = client.get(f"/api/cases/{review_case.id}/issues").json()
+    assert any(issue["title"] == "法审日期晚于合同签订日期" for issue in issues)

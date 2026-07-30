@@ -7,7 +7,16 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.review import AppSetting, EvidenceRef, Issue, ReviewCase, ReviewVersion, UploadedFile
+from app.models.review import (
+    AppSetting,
+    DocumentPage,
+    EvidenceRef,
+    Issue,
+    OcrBlock,
+    ReviewCase,
+    ReviewVersion,
+    UploadedFile,
+)
 from app.schemas.settings import AiSettings
 from app.services.ai_provider import OpenAICompatibleProvider, build_contract_review_prompt
 
@@ -69,10 +78,27 @@ class ReviewRunService:
         files = self.session.scalars(
             select(UploadedFile).where(UploadedFile.case_id == case_id).order_by(UploadedFile.id.asc())
         ).all()
-        return [MaterialText(file=file, text=self._read_text(Path(file.original_path))) for file in files]
+        return [MaterialText(file=file, text=self._material_text(file)) for file in files]
+
+    def _material_text(self, uploaded_file: UploadedFile) -> str:
+        persisted_text = self._read_persisted_blocks(uploaded_file.id)
+        if persisted_text.strip():
+            return persisted_text
+        return self._read_text(Path(uploaded_file.original_path))
+
+    def _read_persisted_blocks(self, uploaded_file_id: int) -> str:
+        rows = self.session.execute(
+            select(OcrBlock.text)
+            .join(DocumentPage, OcrBlock.page_id == DocumentPage.id)
+            .where(DocumentPage.file_id == uploaded_file_id)
+            .order_by(DocumentPage.page_number.asc(), OcrBlock.order_index.asc())
+        ).all()
+        return "\n".join(row[0] for row in rows)
 
     def _read_text(self, path: Path) -> str:
         if path.suffix.lower() in {".txt", ".md"}:
+            if not path.exists():
+                return ""
             return path.read_text(encoding="utf-8", errors="ignore")
         if path.suffix.lower() == ".pdf":
             try:
