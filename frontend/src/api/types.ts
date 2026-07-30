@@ -134,4 +134,6 @@ export type AiConnectionTestResult = {
 export type SystemSettings = {
   ocrEngine: "paddleocr" | "rapidocr";
   storageRoot: string;
+  ocrDpi: number;
+  preprocessImages: boolean;
 };

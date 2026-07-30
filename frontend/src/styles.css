@@ -244,6 +244,19 @@ textarea:focus {
   gap: 7px;
 }
 
+.form-grid label.checkbox-label {
+  align-items: center;
+  display: flex;
+  font-weight: 700;
+  gap: 10px;
+  min-height: 62px;
+}
+
+.checkbox-label input {
+  min-height: auto;
+  width: 18px;
+}
+
 .new-case-layout {
   align-items: start;
   display: grid;

@@ -26,6 +26,18 @@ npm run dev
 
 默认前端地址为 Vite 输出的本地地址，通常是 `http://127.0.0.1:5173`。
 
+## OCR 本机安装
+
+建议先安装 RapidOCR 验证扫描件链路：
+
+```bash
+cd backend
+PYTHON_BIN=/Users/alink/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+  bash scripts/install_ocr_deps.sh rapid
+```
+
+完整调参说明见 `docs/ocr-local-setup.md`。
+
 ## 测试
 
 ```bash

@@ -22,6 +22,8 @@ export function SettingsPage() {
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
     ocrEngine: "paddleocr",
     storageRoot: "./data/storage",
+    ocrDpi: 260,
+    preprocessImages: true,
   });
   const [status, setStatus] = useState("");
   const [isTesting, setIsTesting] = useState(false);
@@ -161,6 +163,34 @@ export function SettingsPage() {
               value={systemSettings.storageRoot}
             />
           </label>
+          <div className="two-field-grid">
+            <label>
+              OCR DPI
+              <input
+                max="500"
+                min="120"
+                onChange={(event) =>
+                  setSystemSettings((current) => ({ ...current, ocrDpi: Number(event.target.value) }))
+                }
+                step="10"
+                type="number"
+                value={systemSettings.ocrDpi}
+              />
+            </label>
+            <label className="checkbox-label">
+              <input
+                checked={systemSettings.preprocessImages}
+                onChange={(event) =>
+                  setSystemSettings((current) => ({
+                    ...current,
+                    preprocessImages: event.target.checked,
+                  }))
+                }
+                type="checkbox"
+              />
+              启用灰度/对比度/锐化预处理
+            </label>
+          </div>
           <p className="helper-text">当前上传文件、OCR 中间结果和导出报告保存在本机，不会自动上传到 OA。</p>
         </div>
         {status && <p className="status-line">{status}</p>}

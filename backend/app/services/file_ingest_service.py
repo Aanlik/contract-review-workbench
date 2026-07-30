@@ -3,13 +3,19 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.models.review import AppSetting, DocumentPage, OcrBlock, UploadedFile
+from app.schemas.settings import SystemSettings
 from app.services.document_parser import DocumentParser, PaddleOcrProvider, RapidOcrProvider
 
 
 class FileIngestService:
     def __init__(self, session: Session, parser: DocumentParser | None = None) -> None:
         self.session = session
-        self.parser = parser or DocumentParser(ocr_provider=self._ocr_provider())
+        system_settings = self._system_settings()
+        self.parser = parser or DocumentParser(
+            ocr_provider=self._ocr_provider(system_settings),
+            ocr_dpi=system_settings.ocr_dpi,
+            preprocess_images=system_settings.preprocess_images,
+        )
 
     def ingest(self, uploaded_file_id: int) -> UploadedFile:
         uploaded = self.session.get(UploadedFile, uploaded_file_id)
@@ -57,10 +63,12 @@ class FileIngestService:
         self.session.refresh(uploaded)
         return uploaded
 
-    def _ocr_provider(self):
+    def _system_settings(self) -> SystemSettings:
         setting = self.session.get(AppSetting, "system")
-        engine = (setting.value.get("ocr_engine") if setting else "paddleocr") or "paddleocr"
-        if engine == "rapidocr":
+        return SystemSettings(**setting.value) if setting else SystemSettings()
+
+    def _ocr_provider(self, system_settings: SystemSettings):
+        if system_settings.ocr_engine == "rapidocr":
             return RapidOcrProvider()
         return PaddleOcrProvider()
 

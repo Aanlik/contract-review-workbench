@@ -372,6 +372,8 @@ export async function getSystemSettings(): Promise<SystemSettings> {
   return {
     ocrEngine: data.ocr_engine,
     storageRoot: data.storage_root,
+    ocrDpi: data.ocr_dpi,
+    preprocessImages: data.preprocess_images,
   };
 }
 
@@ -382,11 +384,15 @@ export async function saveSystemSettings(payload: SystemSettings): Promise<Syste
     body: JSON.stringify({
       ocr_engine: payload.ocrEngine,
       storage_root: payload.storageRoot,
+      ocr_dpi: payload.ocrDpi,
+      preprocess_images: payload.preprocessImages,
     }),
   });
   const data = await parseJsonResponse(response);
   return {
     ocrEngine: data.ocr_engine,
     storageRoot: data.storage_root,
+    ocrDpi: data.ocr_dpi,
+    preprocessImages: data.preprocess_images,
   };
 }

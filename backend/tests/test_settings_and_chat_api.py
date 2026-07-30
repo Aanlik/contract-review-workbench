@@ -40,6 +40,8 @@ def test_system_settings_are_persisted_in_database(db_session):
     payload = {
         "ocr_engine": "rapidocr",
         "storage_root": "/tmp/contract-review-storage",
+        "ocr_dpi": 320,
+        "preprocess_images": False,
     }
 
     assert client.put("/api/settings/system", json=payload).status_code == 200

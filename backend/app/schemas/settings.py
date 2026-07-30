@@ -21,3 +21,5 @@ class AiConnectionTestResult(BaseModel):
 class SystemSettings(BaseModel):
     ocr_engine: Literal["paddleocr", "rapidocr"] = "paddleocr"
     storage_root: str = "./data/storage"
+    ocr_dpi: int = Field(default=260, ge=120, le=500)
+    preprocess_images: bool = True

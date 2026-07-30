@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
+import tempfile
 from typing import Literal, Protocol
+
+from PIL import Image, ImageFilter, ImageOps
 
 @dataclass(frozen=True)
 class ParsedBlock:
@@ -19,6 +22,11 @@ class ParsedPage:
 
 class OcrProvider(Protocol):
     def recognize_page(self, image_path: Path) -> list[ParsedBlock]:
+        pass
+
+
+class PdfRenderer(Protocol):
+    def render(self, file_path: Path, output_dir: Path, dpi: int) -> list[Path]:
         pass
 
 
@@ -52,13 +60,17 @@ class PaddleOcrProvider:
 class RapidOcrProvider:
     def recognize_page(self, image_path: Path) -> list[ParsedBlock]:
         try:
-            from rapidocr_onnxruntime import RapidOCR
+            from rapidocr import RapidOCR
         except Exception as exc:
-            raise RuntimeError(
-                "RapidOCR is not installed. Install rapidocr_onnxruntime before selecting RapidOCR."
-            ) from exc
+            try:
+                from rapidocr_onnxruntime import RapidOCR
+            except Exception as legacy_exc:
+                raise RuntimeError(
+                    "RapidOCR is not installed. Install rapidocr before selecting RapidOCR."
+                ) from legacy_exc
         engine = RapidOCR()
-        result, _ = engine(str(image_path))
+        output = engine(str(image_path))
+        result = self._normalize_rapidocr_output(output)
         return [
             ParsedBlock(
                 text=str(text),
@@ -69,6 +81,50 @@ class RapidOcrProvider:
             )
             for order_index, (bbox, text, confidence) in enumerate(result or [])
         ]
+
+    def _normalize_rapidocr_output(self, output):
+        if isinstance(output, tuple):
+            return output[0]
+        if all(hasattr(output, attr) for attr in ("boxes", "txts", "scores")):
+            boxes = [] if output.boxes is None else list(output.boxes)
+            txts = [] if output.txts is None else list(output.txts)
+            scores = [] if output.scores is None else list(output.scores)
+            return list(zip(boxes, txts, scores))
+        if hasattr(output, "to_dict"):
+            data = output.to_dict()
+            return list(zip(data.get("boxes") or [], data.get("txts") or [], data.get("scores") or []))
+        return output
+
+
+class PdfPageRenderer:
+    def render(self, file_path: Path, output_dir: Path, dpi: int) -> list[Path]:
+        import fitz
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        scale = dpi / 72
+        matrix = fitz.Matrix(scale, scale)
+        paths: list[Path] = []
+        with fitz.open(file_path) as document:
+            for page_index, page in enumerate(document, start=1):
+                pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+                image_path = output_dir / f"page-{page_index:04d}.png"
+                pixmap.save(image_path)
+                paths.append(image_path)
+        return paths
+
+
+class ImagePreprocessor:
+    def preprocess(self, image_path: Path) -> Path:
+        target_path = image_path.with_name(f"{image_path.stem}-preprocessed{image_path.suffix}")
+        try:
+            with Image.open(image_path) as image:
+                processed = ImageOps.grayscale(image)
+                processed = ImageOps.autocontrast(processed)
+                processed = processed.filter(ImageFilter.SHARPEN)
+                processed.save(target_path)
+            return target_path
+        except Exception:
+            return image_path
 
 
 def normalize_ocr_bbox(bbox) -> list[float] | None:
@@ -85,8 +141,19 @@ def normalize_ocr_bbox(bbox) -> list[float] | None:
 
 
 class DocumentParser:
-    def __init__(self, ocr_provider: OcrProvider | None = None) -> None:
+    def __init__(
+        self,
+        ocr_provider: OcrProvider | None = None,
+        pdf_renderer: PdfRenderer | None = None,
+        preprocessor: ImagePreprocessor | None = None,
+        ocr_dpi: int = 260,
+        preprocess_images: bool = True,
+    ) -> None:
         self.ocr_provider = ocr_provider or PaddleOcrProvider()
+        self.pdf_renderer = pdf_renderer or PdfPageRenderer()
+        self.preprocessor = preprocessor or ImagePreprocessor()
+        self.ocr_dpi = ocr_dpi
+        self.preprocess_images = preprocess_images
 
     def extract_text(self, file_path: Path, file_type: str) -> list[ParsedPage]:
         if file_path.suffix.lower() in {".txt", ".md"}:
@@ -119,7 +186,24 @@ class DocumentParser:
         return self._extract_with_ocr(file_path)
 
     def _extract_with_ocr(self, file_path: Path) -> list[ParsedPage]:
-        blocks = self.ocr_provider.recognize_page(file_path)
+        if file_path.suffix.lower() == ".pdf":
+            with tempfile.TemporaryDirectory(prefix="contract-ocr-pages-") as temp_dir:
+                try:
+                    image_paths = self.pdf_renderer.render(file_path, Path(temp_dir), self.ocr_dpi)
+                except Exception as exc:
+                    raise RuntimeError(f"OCR PDF rendering failed: {exc}") from exc
+                pages: list[ParsedPage] = []
+                for page_number, image_path in enumerate(image_paths, start=1):
+                    ocr_path = self.preprocessor.preprocess(image_path) if self.preprocess_images else image_path
+                    pages.append(
+                        ParsedPage(
+                            page_number=page_number,
+                            blocks=self.ocr_provider.recognize_page(ocr_path),
+                        )
+                    )
+                return pages
+        ocr_path = self.preprocessor.preprocess(file_path) if self.preprocess_images else file_path
+        blocks = self.ocr_provider.recognize_page(ocr_path)
         return [ParsedPage(page_number=1, blocks=blocks)]
 
     def _extract_pdf_text(self, file_path: Path) -> list[ParsedPage]:
