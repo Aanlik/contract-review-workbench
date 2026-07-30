@@ -138,6 +138,29 @@ export type SystemSettings = {
   preprocessImages: boolean;
 };
 
+export type OcrPackageStatus = {
+  installed: boolean;
+  package: string;
+  importName: string;
+  note: string | null;
+};
+
+export type OcrRuntimeStatus = {
+  currentEngine: "paddleocr" | "rapidocr";
+  currentEngineInstalled: boolean;
+  installSupported: boolean;
+  installSupportedReason: string | null;
+  engines: Record<string, OcrPackageStatus>;
+};
+
+export type OcrInstallTarget = "rapid" | "rapid-legacy" | "paddle" | "all";
+
+export type OcrInstallResponse = {
+  taskId: string;
+  target: OcrInstallTarget;
+  message: string;
+};
+
 export type VersionDiffItem = {
   issueId: number;
   title: string;

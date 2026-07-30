@@ -2,12 +2,15 @@ import { FormEvent, useEffect, useState } from "react";
 
 import {
   getAiSettings,
+  getOcrRuntimeStatus,
   getSystemSettings,
+  getTask,
+  installOcrDependencies,
   saveAiSettings,
   saveSystemSettings,
   testAiSettings,
 } from "../api/client";
-import type { AiSettings, SystemSettings } from "../api/types";
+import type { AiSettings, OcrInstallTarget, OcrRuntimeStatus, SystemSettings, TaskStatus } from "../api/types";
 import { loadWorkspaceState, saveWorkspaceState } from "../state/workspace";
 
 const emptySettings: AiSettings = {
@@ -29,6 +32,11 @@ export function SettingsPage() {
   const [status, setStatus] = useState("");
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(loadWorkspaceState().aiTestResult ?? null);
+  const [ocrStatus, setOcrStatus] = useState<OcrRuntimeStatus | null>(null);
+  const [isCheckingOcr, setIsCheckingOcr] = useState(false);
+  const [isInstallingOcr, setIsInstallingOcr] = useState(false);
+  const [ocrInstallTarget, setOcrInstallTarget] = useState<OcrInstallTarget>("rapid");
+  const [ocrInstallTask, setOcrInstallTask] = useState<TaskStatus | null>(null);
 
   useEffect(() => {
     getAiSettings()
@@ -39,7 +47,31 @@ export function SettingsPage() {
     getSystemSettings()
       .then(setSystemSettings)
       .catch(() => setStatus("尚未读取到系统配置。"));
+    refreshOcrStatus();
   }, []);
+
+  useEffect(() => {
+    if (!ocrInstallTask?.taskId || !["queued", "running"].includes(ocrInstallTask.status)) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const task = await getTask(ocrInstallTask.taskId);
+        setOcrInstallTask(task);
+        if (task.status === "completed") {
+          setIsInstallingOcr(false);
+          setStatus("OCR 依赖安装完成，正在重新检测。");
+          await refreshOcrStatus();
+        }
+        if (task.status === "failed") {
+          setIsInstallingOcr(false);
+          setStatus("OCR 依赖安装失败，请查看任务错误信息。");
+        }
+      } catch (error) {
+        setIsInstallingOcr(false);
+        setStatus(error instanceof Error ? error.message : "读取安装任务失败。");
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [ocrInstallTask?.taskId, ocrInstallTask?.status]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -73,6 +105,48 @@ export function SettingsPage() {
     } finally {
       setIsTesting(false);
     }
+  }
+
+  async function refreshOcrStatus() {
+    setIsCheckingOcr(true);
+    try {
+      const result = await getOcrRuntimeStatus();
+      setOcrStatus(result);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "OCR 安装状态检测失败。");
+    } finally {
+      setIsCheckingOcr(false);
+    }
+  }
+
+  async function handleInstallOcr(target: OcrInstallTarget) {
+    setIsInstallingOcr(true);
+    setStatus("正在创建 OCR 依赖安装任务...");
+    try {
+      const result = await installOcrDependencies(target);
+      const task = await getTask(result.taskId);
+      setOcrInstallTask(task);
+      setStatus(result.message);
+    } catch (error) {
+      setIsInstallingOcr(false);
+      setStatus(error instanceof Error ? error.message : "OCR 依赖安装任务创建失败。");
+    }
+  }
+
+  function targetForCurrentEngine(): OcrInstallTarget {
+    return systemSettings.ocrEngine === "paddleocr" ? "paddle" : "rapid";
+  }
+
+  function renderEngineStatus(key: string, label: string) {
+    const item = ocrStatus?.engines[key];
+    return (
+      <div className="ocr-runtime-row" key={key}>
+        <span>{label}</span>
+        <strong className={item?.installed ? "ocr-installed" : "ocr-missing"}>
+          {item?.installed ? "已安装" : "未安装"}
+        </strong>
+      </div>
+    );
   }
 
   return (
@@ -197,6 +271,74 @@ export function SettingsPage() {
             />
             图片预处理（灰度 + 自动对比度 + 锐化）
           </label>
+
+          <div className="ocr-runtime-panel">
+            <div className="ocr-runtime-head">
+              <div>
+                <h3>本机 OCR 依赖</h3>
+                <p>
+                  当前引擎：{systemSettings.ocrEngine === "paddleocr" ? "PaddleOCR" : "RapidOCR"}
+                  {ocrStatus && ` · ${ocrStatus.currentEngineInstalled ? "可用" : "不可用"}`}
+                </p>
+              </div>
+              <button disabled={isCheckingOcr} onClick={refreshOcrStatus} type="button">
+                {isCheckingOcr ? "检测中..." : "重新检测"}
+              </button>
+            </div>
+
+            <div className="ocr-runtime-list">
+              {renderEngineStatus("rapidocr", "RapidOCR")}
+              {renderEngineStatus("rapidocr_onnxruntime", "RapidOCR Legacy")}
+              {renderEngineStatus("onnxruntime", "ONNX Runtime")}
+              {renderEngineStatus("paddleocr", "PaddleOCR")}
+            </div>
+
+            {!ocrStatus?.installSupported && (
+              <p className="ocr-runtime-warning">{ocrStatus?.installSupportedReason}</p>
+            )}
+
+            <div className="ocr-install-row">
+              <select
+                disabled={isInstallingOcr || ocrStatus?.installSupported === false}
+                onChange={(event) => setOcrInstallTarget(event.target.value as OcrInstallTarget)}
+                value={ocrInstallTarget}
+              >
+                <option value="rapid">RapidOCR</option>
+                <option value="rapid-legacy">RapidOCR Legacy</option>
+                <option value="paddle">PaddleOCR</option>
+                <option value="all">全部 OCR 依赖</option>
+              </select>
+              <button
+                disabled={isInstallingOcr || ocrStatus?.installSupported === false}
+                onClick={() => handleInstallOcr(ocrInstallTarget)}
+                type="button"
+              >
+                {isInstallingOcr ? "安装中..." : "一键安装"}
+              </button>
+              <button
+                className="secondary"
+                disabled={isInstallingOcr || ocrStatus?.installSupported === false}
+                onClick={() => handleInstallOcr(targetForCurrentEngine())}
+                type="button"
+              >
+                安装当前引擎
+              </button>
+            </div>
+
+            {ocrInstallTask && (
+              <div className="task-card">
+                <div className="task-header">
+                  <span>安装任务：{ocrInstallTask.status}</span>
+                  <strong>{ocrInstallTask.progressPercent}%</strong>
+                </div>
+                <div className="task-progress">
+                  <div style={{ width: `${ocrInstallTask.progressPercent}%` }} />
+                </div>
+                <p>{ocrInstallTask.progress || "等待执行..."}</p>
+                {ocrInstallTask.error && <p className="task-error">{ocrInstallTask.error}</p>}
+              </div>
+            )}
+          </div>
         </div>
 
         <button type="submit">保存设置</button>

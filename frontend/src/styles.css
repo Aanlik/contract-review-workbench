@@ -1322,6 +1322,68 @@ textarea { line-height: 1.6; min-height: 100px; resize: vertical; }
   min-height: auto;
 }
 
+.ocr-runtime-panel {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ocr-runtime-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ocr-runtime-head h3 {
+  font-size: 14px;
+  margin: 0 0 3px;
+}
+
+.ocr-runtime-head p,
+.ocr-runtime-panel p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.ocr-runtime-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ocr-runtime-row {
+  min-height: 34px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-raised);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.ocr-installed {
+  color: var(--accent-green);
+}
+
+.ocr-missing,
+.ocr-runtime-warning {
+  color: var(--accent-red) !important;
+}
+
+.ocr-install-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ============================================================
    Modal / Dialog
    ============================================================ */

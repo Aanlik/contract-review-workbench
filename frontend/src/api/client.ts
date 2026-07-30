@@ -8,6 +8,9 @@ import type {
   Issue,
   IssueUpdatePayload,
   ManualIssuePayload,
+  OcrInstallResponse,
+  OcrInstallTarget,
+  OcrRuntimeStatus,
   ReviewCase,
   ReviewVersion,
   SystemSettings,
@@ -490,6 +493,42 @@ export async function saveSystemSettings(payload: SystemSettings): Promise<Syste
     storageRoot: data.storage_root,
     ocrDpi: data.ocr_dpi,
     preprocessImages: data.preprocess_images,
+  };
+}
+
+export async function getOcrRuntimeStatus(): Promise<OcrRuntimeStatus> {
+  const response = await fetch(`${API_BASE}/settings/ocr/status`);
+  const data = await parseJsonResponse(response);
+  const engines: OcrRuntimeStatus["engines"] = {};
+  for (const [key, value] of Object.entries(data.engines ?? {})) {
+    const item = value as any;
+    engines[key] = {
+      installed: item.installed,
+      package: item.package,
+      importName: item.import_name,
+      note: item.note,
+    };
+  }
+  return {
+    currentEngine: data.current_engine,
+    currentEngineInstalled: data.current_engine_installed,
+    installSupported: data.install_supported,
+    installSupportedReason: data.install_supported_reason,
+    engines,
+  };
+}
+
+export async function installOcrDependencies(target: OcrInstallTarget): Promise<OcrInstallResponse> {
+  const response = await fetch(`${API_BASE}/settings/ocr/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target }),
+  });
+  const data = await parseJsonResponse(response);
+  return {
+    taskId: data.task_id,
+    target: data.target,
+    message: data.message,
   };
 }
 

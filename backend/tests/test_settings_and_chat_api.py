@@ -1,4 +1,7 @@
 from fastapi.testclient import TestClient
+import importlib.util
+import subprocess
+import sys
 
 from app.api.routes import settings as settings_route
 from app.core.database import get_session
@@ -103,6 +106,61 @@ def test_ai_settings_test_connection_returns_failure_detail(db_session, monkeypa
     assert response.status_code == 200
     assert response.json()["ok"] is False
     assert "401 Unauthorized" in response.json()["message"]
+
+
+def test_ocr_status_reports_importable_engines(db_session, monkeypatch):
+    client = make_client(db_session)
+    settings_route._system_settings = None
+
+    def fake_find_spec(name):
+        return object() if name in {"rapidocr", "onnxruntime"} else None
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+
+    response = client.get("/api/settings/ocr/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["engines"]["rapidocr"]["installed"] is True
+    assert body["engines"]["rapidocr_onnxruntime"]["installed"] is False
+    assert body["engines"]["paddleocr"]["installed"] is False
+    assert body["current_engine"] == "paddleocr"
+    assert body["current_engine_installed"] is False
+
+
+def test_install_ocr_dependencies_starts_background_task(db_session, monkeypatch):
+    client = make_client(db_session)
+    calls = []
+
+    def fake_run(command, capture_output, text, timeout):
+        calls.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = "installed"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    response = client.post("/api/settings/ocr/install", json={"target": "rapid"})
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["task_id"].startswith("task-")
+    task = client.get(f"/api/tasks/{body['task_id']}").json()
+    assert task["status"] in {"queued", "running", "completed"}
+
+
+def test_install_ocr_dependencies_rejects_frozen_runtime(db_session, monkeypatch):
+    client = make_client(db_session)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    response = client.post("/api/settings/ocr/install", json={"target": "rapid"})
+
+    assert response.status_code == 400
+    assert "打包后的程序" in response.json()["detail"]
 
 
 def test_case_chat_persists_user_and_ai_messages(db_session):
