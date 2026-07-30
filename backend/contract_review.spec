@@ -7,22 +7,42 @@ Build on Windows:
 The resulting dist/contract-review/ folder is a portable distribution.
 """
 
-import sys
 from pathlib import Path
+from importlib.util import find_spec
+
+from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 spec_dir = Path(SPECPATH)
 project_root = spec_dir.parent
 
+ocr_datas = []
+ocr_binaries = []
+ocr_hiddenimports = []
+
+for package in [
+    'rapidocr',
+    'rapidocr_onnxruntime',
+    'onnxruntime',
+    'paddle',
+    'paddleocr',
+]:
+    if find_spec(package) is None:
+        continue
+    package_datas, package_binaries, package_hiddenimports = collect_all(package)
+    ocr_datas += package_datas
+    ocr_binaries += package_binaries
+    ocr_hiddenimports += package_hiddenimports
+
 a = Analysis(
     [str(spec_dir / 'run.py')],
     pathex=[str(spec_dir)],
-    binaries=[],
+    binaries=ocr_binaries,
     datas=[
         (str(project_root / 'frontend' / 'dist'), 'frontend/dist'),
         (str(spec_dir / 'alembic'), 'alembic'),
         (str(spec_dir / 'alembic.ini'), '.'),
-    ],
+    ] + ocr_datas,
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops',
@@ -44,7 +64,7 @@ a = Analysis(
         'app.api.routes.review_runs',
         'app.api.routes.settings',
         'app.api.routes.tasks',
-    ],
+    ] + ocr_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

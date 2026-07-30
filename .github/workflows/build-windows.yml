@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -24,8 +24,20 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install fastapi "uvicorn[standard]" sqlalchemy pydantic-settings python-multipart httpx pymupdf pillow python-docx cryptography alembic
-          pip install pyinstaller
+          python -m pip install --upgrade pip
+          python -m pip install -e "backend[ocr-all]"
+          python -m pip install pyinstaller
+
+      - name: Verify bundled OCR imports
+        run: |
+          @'
+          import importlib.util
+          packages = ["rapidocr", "onnxruntime", "paddle", "paddleocr"]
+          missing = [name for name in packages if importlib.util.find_spec(name) is None]
+          if missing:
+              raise SystemExit(f"Missing OCR packages: {missing}")
+          print("OCR imports OK:", ", ".join(packages))
+          '@ | python
 
       - name: Install frontend dependencies
         run: |
@@ -43,7 +55,7 @@ jobs:
 
       - name: Setup distribution
         run: |
-          mkdir dist\contract-review\data\storage
+          New-Item -ItemType Directory -Force -Path "dist\contract-review\data\storage" | Out-Null
           echo # Contract Review Workbench > dist\contract-review\.env
 
       - name: Create start script

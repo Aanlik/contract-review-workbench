@@ -16,8 +16,12 @@ if errorlevel 1 (
 
 :: Install dependencies
 echo [1/5] Installing Python dependencies...
-pip install fastapi uvicorn sqlalchemy pydantic-settings python-multipart httpx pymupdf pillow python-docx cryptography alembic
-pip install pyinstaller
+python -m pip install --upgrade pip
+python -m pip install -e "backend[ocr-all]"
+python -m pip install pyinstaller
+
+echo [1/5] Verifying OCR dependencies...
+python -c "import rapidocr, onnxruntime, paddle, paddleocr; print('OCR imports OK')"
 
 :: Build frontend
 echo [2/5] Building frontend...
