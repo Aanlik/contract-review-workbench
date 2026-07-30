@@ -121,3 +121,71 @@ textarea {
   min-height: 70vh;
   padding: 16px;
 }
+
+.toolbar-tabs,
+.filter-row,
+.chat-actions,
+.detail-head,
+.panel-header {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-row select,
+.issue-detail select,
+.issue-detail textarea,
+.ai-chat textarea {
+  border: 1px solid #ccd3df;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.issue-items {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.issue-item {
+  background: #f8fafc;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  min-height: 92px;
+  padding: 10px;
+  text-align: left;
+}
+
+.issue-item.selected {
+  border-color: #315b9f;
+  box-shadow: inset 3px 0 0 #315b9f;
+}
+
+.panel-header {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.document-placeholder,
+.empty-state,
+.chat-history,
+.evidence-card {
+  background: #f8fafc;
+  border: 1px solid #e1e6ee;
+  border-radius: 6px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.issue-detail,
+.ai-chat {
+  display: grid;
+  gap: 10px;
+}
+
+.issue-detail label {
+  display: grid;
+  gap: 6px;
+}
