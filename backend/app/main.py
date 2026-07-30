@@ -3,13 +3,13 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.database import engine
-from app.models.base import Base
 from app.models import review  # noqa: F401
+from app.models.base import Base
 
 
 def _find_frontend_dist() -> Path | None:

@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from app.core.crypto import decrypt_api_key, encrypt_api_key
 from app.core.database import get_session
 from app.main import create_app
-from app.models.review import AuditLog, ReviewCase
 from app.services.audit_service import list_audit_logs, record_audit
 
 
@@ -88,7 +87,7 @@ def test_ai_settings_encrypted_in_db(db_session):
     db_session.expire_all()
     from app.models.review import AppSetting
     row = db_session.get(AppSetting, "ai")
-    assert row is not None, f"No AppSetting row found for key 'ai'"
+    assert row is not None, "No AppSetting row found for key 'ai'"
     assert row.value["api_key"] != "sk-secret-key-abc"  # Should be encrypted
     # But reading through API should return decrypted
     settings_route._ai_settings = None  # clear cache to force DB read

@@ -69,9 +69,9 @@ class ExportService:
     def _export_docx(self, case_id: int, include_ai_summary: bool, scope: str) -> Path:
         try:
             from docx import Document
-            from docx.shared import Inches, Pt, RGBColor
-            from docx.enum.text import WD_ALIGN_PARAGRAPH
             from docx.enum.table import WD_TABLE_ALIGNMENT
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.shared import Inches, Pt, RGBColor
         except Exception:
             return self.export_markdown(case_id, include_ai_summary, scope)
 
@@ -109,7 +109,7 @@ class ExportService:
         for issue in issues:
             risk_counts[issue.risk_level] = risk_counts.get(issue.risk_level, 0) + 1
 
-        summary_heading = document.add_heading("审核摘要", level=1)
+        document.add_heading("审核摘要", level=1)
         table = document.add_table(rows=1, cols=2)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.style = "Light Shading Accent 1"
@@ -231,7 +231,10 @@ class ExportService:
 
             replacement = ""
             if issue.replacement_clause:
-                replacement = f'<div class="replacement"><strong>替代条款：</strong><pre>{issue.replacement_clause}</pre></div>'
+                replacement = (
+                    '<div class="replacement"><strong>替代条款：</strong>'
+                    f"<pre>{issue.replacement_clause}</pre></div>"
+                )
 
             suggestion = ""
             if issue.suggestion:
@@ -240,7 +243,9 @@ class ExportService:
             issue_rows += f"""
             <div class="issue" style="border-left: 4px solid {risk_colors.get(issue.risk_level, '#ccc')};">
                 <div class="issue-header">
-                    <span class="badge" style="background:{risk_colors.get(issue.risk_level, '#ccc')};">{risk_labels.get(issue.risk_level, issue.risk_level)}</span>
+                    <span class="badge" style="background:{risk_colors.get(issue.risk_level, '#ccc')};">
+                        {risk_labels.get(issue.risk_level, issue.risk_level)}
+                    </span>
                     <strong>{i}. {issue.title}</strong>
                     <span class="meta">状态：{issue.status} | 来源：{issue.source}</span>
                 </div>
@@ -259,7 +264,10 @@ class ExportService:
         for level in ["high", "medium", "low", "info"]:
             count = risk_counts.get(level, 0)
             if count > 0:
-                summary_items += f'<span class="summary-item" style="color:{risk_colors[level]};">{risk_labels[level]}: {count}</span> '
+                summary_items += (
+                    f'<span class="summary-item" style="color:{risk_colors[level]};">'
+                    f"{risk_labels[level]}: {count}</span> "
+                )
 
         html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -268,7 +276,8 @@ class ExportService:
 <title>合同审核报告 - {review_case.title}</title>
 <style>
 @page {{ margin: 2cm; size: A4; }}
-body {{ font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 13px; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }}
+body {{ font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 13px; line-height: 1.6; }}
+body {{ color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }}
 h1 {{ text-align: center; font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 10px; }}
 .meta-info {{ text-align: center; color: #888; font-size: 12px; margin-bottom: 20px; }}
 .summary {{ background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 20px; }}
@@ -281,7 +290,8 @@ h1 {{ text-align: center; font-size: 22px; border-bottom: 2px solid #333; paddin
 .suggestion {{ background: #e8f5e9; padding: 8px; border-radius: 4px; margin: 6px 0; }}
 .replacement {{ background: #fff3e0; padding: 8px; border-radius: 4px; margin: 6px 0; }}
 .replacement pre {{ white-space: pre-wrap; margin: 4px 0 0; }}
-.footer {{ text-align: center; color: #aaa; font-size: 10px; margin-top: 40px; border-top: 1px solid #eee; padding-top: 10px; }}
+.footer {{ text-align: center; color: #aaa; font-size: 10px; margin-top: 40px; }}
+.footer {{ border-top: 1px solid #eee; padding-top: 10px; }}
 </style>
 </head>
 <body>

@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import get_session
 from app.main import create_app
 from app.models.base import Base
+from app.services.task_queue import task_queue
 
 
 @pytest.fixture()
@@ -36,12 +37,9 @@ def client(db_session: Session):
     app.dependency_overrides[get_session] = override_get_session
     return app.test_client() if hasattr(app, "test_client") else None
 
-from app.services.task_queue import task_queue
-
 
 @pytest.fixture(autouse=True)
 def _reset_task_queue():
     task_queue.reset()
     yield
     task_queue.reset()
-

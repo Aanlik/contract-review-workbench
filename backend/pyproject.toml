@@ -42,6 +42,17 @@ ocr-all = [
 pythonpath = ["."]
 testpaths = ["tests"]
 
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = [
+  # FastAPI intentionally uses Depends/Form/File/Query calls as parameter defaults.
+  "B008",
+]
+
 [tool.setuptools.packages.find]
 include = ["app*"]
 exclude = ["data*", "tests*"]

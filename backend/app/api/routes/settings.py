@@ -5,8 +5,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, status
-from fastapi import Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -96,7 +95,7 @@ def _run_ocr_install(task_id: str, target: str) -> dict[str, object]:
     package_spec = f"{_backend_dir()}[{extra}]"
     command = [sys.executable, "-m", "pip", "install", "-e", package_spec]
     task_queue.update_progress(task_id, f"正在安装 OCR 依赖：{target}", step=1, total=3, percent=10)
-    result = subprocess.run(command, capture_output=True, text=True, timeout=1800)
+    result = subprocess.run(command, capture_output=True, text=True, timeout=1800, check=False)
     task_queue.update_progress(task_id, "正在校验安装结果...", step=2, total=3, percent=80)
     if result.returncode != 0:
         raise RuntimeError(result.stderr or result.stdout or f"pip install failed with code {result.returncode}")
@@ -209,7 +208,10 @@ def get_ocr_runtime_status(session: Session = Depends(get_session)):
 @router.post("/ocr/install", response_model=OcrInstallResponse, status_code=status.HTTP_202_ACCEPTED)
 def install_ocr_dependencies(payload: OcrInstallRequest):
     if getattr(sys, "frozen", False):
-        raise HTTPException(status_code=400, detail="打包后的程序不支持运行时安装 OCR 依赖，请使用包含 OCR 依赖的构建版本。")
+        raise HTTPException(
+            status_code=400,
+            detail="打包后的程序不支持运行时安装 OCR 依赖，请使用包含 OCR 依赖的构建版本。",
+        )
     task = task_queue.submit(_run_ocr_install, payload.target, label=f"install-ocr-{payload.target}")
     return OcrInstallResponse(
         task_id=task.task_id,

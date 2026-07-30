@@ -1,7 +1,8 @@
-from fastapi.testclient import TestClient
 import importlib.util
 import subprocess
 import sys
+
+from fastapi.testclient import TestClient
 
 from app.api.routes import settings as settings_route
 from app.core.database import get_session
@@ -132,8 +133,9 @@ def test_install_ocr_dependencies_starts_background_task(db_session, monkeypatch
     client = make_client(db_session)
     calls = []
 
-    def fake_run(command, capture_output, text, timeout):
+    def fake_run(command, capture_output, text, timeout, check):
         calls.append(command)
+        assert check is False
 
         class Result:
             returncode = 0

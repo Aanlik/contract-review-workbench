@@ -1,5 +1,5 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.services.document_parser import DocumentParser, ParsedBlock, ParsedPage, RapidOcrProvider

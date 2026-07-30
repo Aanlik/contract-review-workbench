@@ -1,9 +1,10 @@
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-import tempfile
 from typing import Literal, Protocol
 
 from PIL import Image, ImageFilter, ImageOps
+
 
 @dataclass(frozen=True)
 class ParsedBlock:
@@ -61,7 +62,7 @@ class RapidOcrProvider:
     def recognize_page(self, image_path: Path) -> list[ParsedBlock]:
         try:
             from rapidocr import RapidOCR
-        except Exception as exc:
+        except Exception:
             try:
                 from rapidocr_onnxruntime import RapidOCR
             except Exception as legacy_exc:
@@ -89,10 +90,17 @@ class RapidOcrProvider:
             boxes = [] if output.boxes is None else list(output.boxes)
             txts = [] if output.txts is None else list(output.txts)
             scores = [] if output.scores is None else list(output.scores)
-            return list(zip(boxes, txts, scores))
+            return list(zip(boxes, txts, scores, strict=False))
         if hasattr(output, "to_dict"):
             data = output.to_dict()
-            return list(zip(data.get("boxes") or [], data.get("txts") or [], data.get("scores") or []))
+            return list(
+                zip(
+                    data.get("boxes") or [],
+                    data.get("txts") or [],
+                    data.get("scores") or [],
+                    strict=False,
+                )
+            )
         return output
 
 

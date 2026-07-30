@@ -13,7 +13,6 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
-
 _MASTER_KEY_ENV = "CONTRACT_REVIEW_MASTER_KEY"
 
 

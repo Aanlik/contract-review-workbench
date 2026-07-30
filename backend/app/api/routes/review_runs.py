@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_session
 from app.models.review import Issue, ReviewCase, ReviewVersion
-from app.schemas.review import IssueRead, ReviewCaseRead, ReviewVersionRead
+from app.schemas.review import ReviewCaseRead, ReviewVersionRead
 from app.services.review_run_service import ReviewRunService
 from app.services.task_queue import task_queue
 

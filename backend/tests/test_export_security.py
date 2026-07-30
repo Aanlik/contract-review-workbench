@@ -1,11 +1,9 @@
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.core.database import get_session
 from app.core.config import settings
+from app.core.database import get_session
 from app.main import create_app
-from app.models.review import ReviewCase
 
 
 def make_client(db_session):

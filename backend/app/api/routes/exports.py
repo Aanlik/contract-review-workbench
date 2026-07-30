@@ -26,7 +26,7 @@ def _resolve_safe_path(requested: str) -> Path:
     try:
         target.relative_to(storage_root)
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied: path outside storage root")
+        raise HTTPException(status_code=403, detail="Access denied: path outside storage root") from None
 
     return target
 
@@ -86,7 +86,7 @@ def download_export(file_path: str):
     try:
         target.relative_to(exports_root)
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied: file is not an export")
+        raise HTTPException(status_code=403, detail="Access denied: file is not an export") from None
 
     return FileResponse(
         path=str(target),

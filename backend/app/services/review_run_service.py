@@ -1,8 +1,8 @@
+import json
+import re
 from dataclasses import dataclass
 from datetime import date
-import json
 from pathlib import Path
-import re
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -126,7 +126,10 @@ class ReviewRunService:
                     issue_type="contract_risk",
                     title="需要法务人工复核合同条款",
                     risk_level="info",
-                    description="系统已完成基础读取，但未发现可确定的日期或盖章异常。建议继续配置 AI 后执行专业律师视角审查。",
+                    description=(
+                        "系统已完成基础读取，但未发现可确定的日期或盖章异常。"
+                        "建议继续配置 AI 后执行专业律师视角审查。"
+                    ),
                     suggestion="配置 AI 后点击重新审核，或使用人工标记补充重点条款。",
                     evidence_text=None,
                 )
@@ -207,7 +210,9 @@ class ReviewRunService:
     ) -> list[Issue]:
         created: list[Issue] = []
         contract_materials = [m for m in materials if m.file.file_type == "contract"]
-        approval_materials = [m for m in materials if m.file.file_type in {"sign_report", "meeting_minutes", "approval"}]
+        approval_materials = [
+            m for m in materials if m.file.file_type in {"sign_report", "meeting_minutes", "approval"}
+        ]
 
         if not contract_materials:
             return created
@@ -249,7 +254,10 @@ class ReviewRunService:
                         ),
                         suggestion="请确认合同签订流程是否合规，法审是否在签订前完成。如有异常需追溯审批流程。",
                         evidence_text=None,
-                        evidence_sources=[contract_date_hit.source if contract_date_hit else None, legal_hit.source if legal_hit else None],
+                        evidence_sources=[
+                            contract_date_hit.source if contract_date_hit else None,
+                            legal_hit.source if legal_hit else None,
+                        ],
                     )
                 )
 
@@ -269,7 +277,10 @@ class ReviewRunService:
                         ),
                         suggestion="请核实审批流程是否在合同签订前全部完成。",
                         evidence_text=None,
-                        evidence_sources=[contract_date_hit.source if contract_date_hit else None, approval_hit.source if approval_hit else None],
+                        evidence_sources=[
+                            contract_date_hit.source if contract_date_hit else None,
+                            approval_hit.source if approval_hit else None,
+                        ],
                     )
                 )
 
@@ -353,7 +364,9 @@ class ReviewRunService:
                         evidence_text=None,
                     )
                 )
-            elif not material.text.strip() and material.file.file_name.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff")):
+            elif not material.text.strip() and material.file.file_name.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".tif", ".tiff")
+            ):
                 created.append(
                     self._create_issue(
                         review_case,

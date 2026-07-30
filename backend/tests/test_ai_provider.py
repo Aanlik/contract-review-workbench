@@ -1,6 +1,5 @@
-from app.services.ai_provider import build_contract_review_prompt
 from app.schemas.settings import AiSettings
-from app.services.ai_provider import OpenAICompatibleProvider
+from app.services.ai_provider import OpenAICompatibleProvider, build_contract_review_prompt
 
 
 def test_contract_review_prompt_requires_structured_json():

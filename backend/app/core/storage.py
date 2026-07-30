@@ -1,6 +1,6 @@
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
 from uuid import uuid4
 
 from fastapi import UploadFile

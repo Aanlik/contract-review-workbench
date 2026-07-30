@@ -7,9 +7,18 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:5173",
     headless: true,
   },
-  webServer: {
-    command: "cd frontend && npm run dev",
-    port: 5173,
-    reuseExistingServer: true,
-  },
+  webServer: [
+    {
+      command: ".venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir backend",
+      port: 8000,
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+    {
+      command: "cd frontend && npm run dev",
+      port: 5173,
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+  ],
 });
