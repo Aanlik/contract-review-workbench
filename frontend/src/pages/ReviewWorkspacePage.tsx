@@ -4,13 +4,20 @@ import {
   createManualIssue,
   exportCase,
   getCaseChat,
+  listCaseFiles,
   listIssues,
   reanalyzeCase,
   sendCaseChat,
   sendIssueChat,
   updateIssue,
 } from "../api/client";
-import type { AiMessage, Issue, IssueUpdatePayload, ManualIssuePayload } from "../api/types";
+import type {
+  AiMessage,
+  Issue,
+  IssueUpdatePayload,
+  ManualIssuePayload,
+  UploadedFile,
+} from "../api/types";
 import { AiChatPanel } from "../components/AiChatPanel";
 import { EvidenceViewer } from "../components/EvidenceViewer";
 import { IssueDetail } from "../components/IssueDetail";
@@ -24,6 +31,7 @@ type ReviewWorkspacePageProps = {
 
 export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePageProps) {
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [files, setFiles] = useState<UploadedFile[]>([]);
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [status, setStatus] = useState("");
   const [selectedIssueId, setSelectedIssueId] = useState<number | undefined>(
@@ -45,6 +53,10 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
     if (!selectedIssueId && nextIssues[0]) setSelectedIssueId(nextIssues[0].id);
   }
 
+  async function refreshFiles() {
+    setFiles(await listCaseFiles(caseId));
+  }
+
   async function refreshChat() {
     const chat = await getCaseChat(caseId);
     setMessages(chat.messages);
@@ -52,12 +64,14 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
 
   useEffect(() => {
     refreshIssues().catch((error) => setStatus(error.message));
+    refreshFiles().catch(() => setFiles([]));
     refreshChat().catch(() => setMessages([]));
   }, [caseId]);
 
   async function handleCreateManualIssue(payload: ManualIssuePayload) {
     const next = await createManualIssue(caseId, payload);
     await refreshIssues();
+    await refreshFiles();
     setSelectedIssueId(next.id);
   }
 
@@ -99,7 +113,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
           <IssueList issues={issues} selectedIssueId={selectedIssueId} onSelect={setSelectedIssueId} />
         </aside>
         <section className="evidence-column">
-          <EvidenceViewer issue={selectedIssue} onCreateManualIssue={handleCreateManualIssue} />
+          <EvidenceViewer files={files} issue={selectedIssue} onCreateManualIssue={handleCreateManualIssue} />
         </section>
         <aside className="detail-column">
           <IssueDetail issue={selectedIssue} onReanalyze={handleReanalyze} onSave={handleSaveIssue} />

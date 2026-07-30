@@ -1,9 +1,10 @@
 import { useState } from "react";
 
-import type { EvidenceRef, Issue, ManualIssuePayload } from "../api/types";
+import type { EvidenceRef, Issue, ManualIssuePayload, UploadedFile } from "../api/types";
 
 type EvidenceViewerProps = {
   issue?: Issue;
+  files: UploadedFile[];
   onCreateManualIssue: (payload: ManualIssuePayload) => void;
 };
 
@@ -19,7 +20,7 @@ function EvidenceCard({ evidence }: { evidence: EvidenceRef }) {
   );
 }
 
-export function EvidenceViewer({ issue, onCreateManualIssue }: EvidenceViewerProps) {
+export function EvidenceViewer({ files, issue, onCreateManualIssue }: EvidenceViewerProps) {
   const [evidenceText, setEvidenceText] = useState("");
   const [title, setTitle] = useState("人工新增问题");
 
@@ -50,6 +51,20 @@ export function EvidenceViewer({ issue, onCreateManualIssue }: EvidenceViewerPro
           placeholder="粘贴或输入需要标记的合同/流程材料原文"
           value={evidenceText}
         />
+      </div>
+      <div className="material-list">
+        <h3>上传材料</h3>
+        {files.length ? (
+          files.map((file) => (
+            <div className="material-row" key={file.id}>
+              <strong>{file.fileName}</strong>
+              <span>{file.fileType}</span>
+              <span>{file.parseStatus}</span>
+            </div>
+          ))
+        ) : (
+          <p>暂无上传材料。</p>
+        )}
       </div>
       {issue?.evidenceRefs?.length ? (
         issue.evidenceRefs.map((evidence) => <EvidenceCard evidence={evidence} key={evidence.id} />)

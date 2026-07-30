@@ -181,12 +181,22 @@ textarea {
 .document-placeholder,
 .empty-state,
 .chat-history,
-.evidence-card {
+.evidence-card,
+.material-list {
   background: #f8fafc;
   border: 1px solid #e1e6ee;
   border-radius: 6px;
   margin-top: 12px;
   padding: 12px;
+}
+
+.material-row {
+  align-items: center;
+  border-top: 1px solid #e1e6ee;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 120px 100px;
+  padding: 8px 0;
 }
 
 .issue-detail,

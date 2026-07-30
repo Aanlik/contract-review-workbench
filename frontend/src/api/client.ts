@@ -136,6 +136,12 @@ export async function uploadCaseFile(
   return fromSnakeCaseFile(await parseJsonResponse(response));
 }
 
+export async function listCaseFiles(caseId: number): Promise<UploadedFile[]> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/files`);
+  const data = await parseJsonResponse(response);
+  return data.map(fromSnakeCaseFile);
+}
+
 export async function listIssues(caseId: number): Promise<Issue[]> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/issues`);
   const data = await parseJsonResponse(response);

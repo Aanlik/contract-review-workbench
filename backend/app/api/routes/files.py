@@ -1,6 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.routes.cases import get_active_case
@@ -29,6 +30,16 @@ ALLOWED_FILE_TYPES = {
     "seal_record",
     "other",
 }
+
+
+@router.get("/cases/{case_id}/files", response_model=list[UploadedFileRead])
+def list_case_files(case_id: int, session: Session = Depends(get_session)):
+    get_active_case(case_id, session)
+    return session.scalars(
+        select(UploadedFile)
+        .where(UploadedFile.case_id == case_id)
+        .order_by(UploadedFile.uploaded_at.asc(), UploadedFile.id.asc())
+    ).all()
 
 
 @router.post(

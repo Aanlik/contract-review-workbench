@@ -42,3 +42,19 @@ def test_upload_text_flow_file_is_parsed_immediately(db_session):
     assert body["parse_status"] == "parsed"
     assert body["parse_method"] == "text"
     assert body["page_count"] == 1
+
+
+def test_list_case_files_returns_uploaded_materials(db_session):
+    client = make_client(db_session)
+    case = client.post("/api/cases", json={"title": "文件列表测试"}).json()
+    client.post(
+        f"/api/cases/{case['id']}/files",
+        data={"file_type": "sign_report"},
+        files={"file": ("sign.txt", "审批通过：2026年7月20日".encode(), "text/plain")},
+    )
+
+    response = client.get(f"/api/cases/{case['id']}/files")
+    assert response.status_code == 200
+    files = response.json()
+    assert files[0]["file_name"] == "sign.txt"
+    assert files[0]["parse_status"] == "parsed"
