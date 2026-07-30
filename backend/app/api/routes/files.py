@@ -8,6 +8,7 @@ from app.core.database import get_session
 from app.core.storage import StorageService
 from app.models.review import UploadedFile
 from app.schemas.review import UploadedFileRead
+from app.services.file_ingest_service import FileIngestService
 
 router = APIRouter()
 
@@ -58,4 +59,4 @@ def upload_case_file(
     session.add(uploaded)
     session.commit()
     session.refresh(uploaded)
-    return uploaded
+    return FileIngestService(session).ingest(uploaded.id)

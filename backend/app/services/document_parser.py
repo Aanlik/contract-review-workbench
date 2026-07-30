@@ -34,6 +34,25 @@ class DocumentParser:
         self.ocr_provider = ocr_provider or PaddleOcrProvider()
 
     def extract_text(self, file_path: Path, file_type: str) -> list[ParsedPage]:
+        if file_path.suffix.lower() in {".txt", ".md"}:
+            text = file_path.read_text(encoding="utf-8", errors="ignore").strip()
+            if not text:
+                return []
+            return [
+                ParsedPage(
+                    page_number=1,
+                    blocks=[
+                        ParsedBlock(
+                            text=text,
+                            bbox=None,
+                            confidence=None,
+                            source="pdf_text",
+                            order_index=0,
+                        )
+                    ],
+                )
+            ]
+
         if file_type == "contract":
             return self._extract_with_ocr(file_path)
 
