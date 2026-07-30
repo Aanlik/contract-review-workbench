@@ -113,3 +113,10 @@ export type AiSettings = {
   temperature: number;
   timeoutSeconds: number;
 };
+
+export type AiConnectionTestResult = {
+  ok: boolean;
+  model: string;
+  message: string;
+  latencyMs: number;
+};

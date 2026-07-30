@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { deleteCase, exportCase, listCases } from "./api/client";
+import { deleteCase, exportCase, listCases, updateCase } from "./api/client";
 import type { ReviewCase } from "./api/types";
 import { AppShell } from "./components/AppShell";
 import { CasesPage } from "./pages/CasesPage";
@@ -37,8 +37,17 @@ export default function App() {
   }
 
   async function handleDelete(caseId: number) {
-    if (!window.confirm("确认删除这条审核记录吗？")) return;
+    if (!window.confirm("确认删除这条审核记录吗？本操作会从列表隐藏该记录，原始材料清理将在后续版本提供独立选项。")) return;
     await deleteCase(caseId);
+    refreshCases();
+  }
+
+  async function handleRename(item: ReviewCase) {
+    const title = window.prompt("请输入新的合同名称", item.title);
+    if (title === null) return;
+    const note = window.prompt("请输入备注", item.note ?? "");
+    if (note === null) return;
+    await updateCase(item.id, { title, note });
     refreshCases();
   }
 
@@ -50,7 +59,13 @@ export default function App() {
   return (
     <AppShell activePage={activePage} onNavigate={setActivePage}>
       {activePage === "cases" && (
-        <CasesPage cases={cases} onDelete={handleDelete} onExport={handleExport} onOpen={openCase} />
+        <CasesPage
+          cases={cases}
+          onDelete={handleDelete}
+          onExport={handleExport}
+          onOpen={openCase}
+          onRename={handleRename}
+        />
       )}
       {activePage === "new" && <NewCasePage onCreated={handleCreated} />}
       {activePage === "settings" && <SettingsPage />}

@@ -6,6 +6,7 @@ describe("IssueList", () => {
   it("renders issue title, source, risk level, and status", () => {
     render(
       <IssueList
+        filters={{}}
         issues={[
           {
             id: 1,
@@ -16,6 +17,7 @@ describe("IssueList", () => {
             status: "pending",
           },
         ]}
+        onFilterChange={() => {}}
         selectedIssueId={1}
         onSelect={() => {}}
       />,

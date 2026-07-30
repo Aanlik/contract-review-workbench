@@ -35,6 +35,59 @@ def test_ai_settings_are_persisted_in_database(db_session):
     assert response.json() == payload
 
 
+def test_ai_settings_test_connection_uses_payload(db_session, monkeypatch):
+    client = make_client(db_session)
+    payload = {
+        "base_url": "https://api.example.com/v1",
+        "api_key": "sk-test",
+        "model": "law-model",
+        "temperature": 0.1,
+        "timeout_seconds": 45,
+    }
+
+    class FakeProvider:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def chat(self, messages):
+            assert self.settings.model == "law-model"
+            assert "连接测试" in messages[0]["content"]
+            return "连接正常"
+
+    monkeypatch.setattr("app.api.routes.settings.OpenAICompatibleProvider", FakeProvider)
+    response = client.post("/api/settings/ai/test", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["model"] == "law-model"
+    assert response.json()["message"] == "AI 接口连接正常。"
+
+
+def test_ai_settings_test_connection_returns_failure_detail(db_session, monkeypatch):
+    client = make_client(db_session)
+    payload = {
+        "base_url": "https://api.example.com/v1",
+        "api_key": "sk-test",
+        "model": "law-model",
+        "temperature": 0.1,
+        "timeout_seconds": 45,
+    }
+
+    class FailingProvider:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def chat(self, messages):
+            raise RuntimeError("401 Unauthorized")
+
+    monkeypatch.setattr("app.api.routes.settings.OpenAICompatibleProvider", FailingProvider)
+    response = client.post("/api/settings/ai/test", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "401 Unauthorized" in response.json()["message"]
+
+
 def test_case_chat_persists_user_and_ai_messages(db_session):
     review_case = ReviewCase(title="聊天测试")
     db_session.add(review_case)

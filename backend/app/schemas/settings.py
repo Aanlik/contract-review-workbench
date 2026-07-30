@@ -7,3 +7,10 @@ class AiSettings(BaseModel):
     model: str
     temperature: float = Field(default=0.2, ge=0, le=2)
     timeout_seconds: float = Field(default=60, gt=0)
+
+
+class AiConnectionTestResult(BaseModel):
+    ok: bool
+    model: str
+    message: str
+    latency_ms: int

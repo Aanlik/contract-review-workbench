@@ -1,5 +1,6 @@
 import type {
   AiConversation,
+  AiConnectionTestResult,
   AiSettings,
   CaseDocument,
   EvidenceRef,
@@ -321,5 +322,26 @@ export async function saveAiSettings(payload: AiSettings): Promise<AiSettings> {
     model: data.model,
     temperature: data.temperature,
     timeoutSeconds: data.timeout_seconds,
+  };
+}
+
+export async function testAiSettings(payload: AiSettings): Promise<AiConnectionTestResult> {
+  const response = await fetch(`${API_BASE}/settings/ai/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      base_url: payload.baseUrl,
+      api_key: payload.apiKey,
+      model: payload.model,
+      temperature: payload.temperature,
+      timeout_seconds: payload.timeoutSeconds,
+    }),
+  });
+  const data = await parseJsonResponse(response);
+  return {
+    ok: data.ok,
+    model: data.model,
+    message: data.message,
+    latencyMs: data.latency_ms,
   };
 }

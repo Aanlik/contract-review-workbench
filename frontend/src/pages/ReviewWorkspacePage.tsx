@@ -40,6 +40,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   const [documents, setDocuments] = useState<CaseDocument[]>([]);
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [status, setStatus] = useState("");
+  const [filters, setFilters] = useState<Record<string, string>>(loadWorkspaceState().filters);
   const [selectedIssueId, setSelectedIssueId] = useState<number | undefined>(
     loadWorkspaceState().selectedIssueId,
   );
@@ -50,8 +51,8 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
 
   useEffect(() => {
     const state = loadWorkspaceState();
-    saveWorkspaceState({ ...state, selectedCaseId: caseId, selectedIssueId });
-  }, [caseId, selectedIssueId]);
+    saveWorkspaceState({ ...state, filters, selectedCaseId: caseId, selectedIssueId });
+  }, [caseId, filters, selectedIssueId]);
 
   async function refreshIssues() {
     const nextIssues = await listIssues(caseId);
@@ -146,7 +147,13 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
       </div>
       <section className="workspace-grid">
         <aside className="issue-column">
-          <IssueList issues={issues} selectedIssueId={selectedIssueId} onSelect={setSelectedIssueId} />
+          <IssueList
+            filters={filters}
+            issues={issues}
+            onFilterChange={setFilters}
+            onSelect={setSelectedIssueId}
+            selectedIssueId={selectedIssueId}
+          />
         </aside>
         <section className="evidence-column">
           <EvidenceViewer

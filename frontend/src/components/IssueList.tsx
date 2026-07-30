@@ -2,11 +2,18 @@ import type { Issue } from "../api/types";
 
 type IssueListProps = {
   issues: Issue[];
+  filters: Record<string, string>;
   selectedIssueId?: number;
+  onFilterChange: (filters: Record<string, string>) => void;
   onSelect: (issueId: number) => void;
 };
 
-const tabs = ["全部", "合同风险", "流程审计", "人工标记"];
+const tabs = [
+  ["", "全部"],
+  ["contract_risk", "合同风险"],
+  ["process_audit", "流程审计"],
+  ["manual_mark", "人工标记"],
+];
 const risks = [
   ["", "全部等级"],
   ["high", "高风险"],
@@ -23,25 +30,49 @@ const statuses = [
   ["needs_review", "待复核"],
 ];
 
-export function IssueList({ issues, selectedIssueId, onSelect }: IssueListProps) {
+export function IssueList({ filters, issues, selectedIssueId, onFilterChange, onSelect }: IssueListProps) {
+  const filteredIssues = issues.filter((issue) => {
+    if (filters.issueType && issue.issueType !== filters.issueType) return false;
+    if (filters.riskLevel && issue.riskLevel !== filters.riskLevel) return false;
+    if (filters.status && issue.status !== filters.status) return false;
+    return true;
+  });
+
+  function updateFilter(key: string, value: string) {
+    onFilterChange({ ...filters, [key]: value });
+  }
+
   return (
     <div className="issue-list">
       <div className="toolbar-tabs">
-        {tabs.map((tab) => (
-          <button key={tab} type="button">
-            {tab}
+        {tabs.map(([value, label]) => (
+          <button
+            className={(filters.issueType ?? "") === value ? "active" : ""}
+            key={value || "all"}
+            onClick={() => updateFilter("issueType", value)}
+            type="button"
+          >
+            {label}
           </button>
         ))}
       </div>
       <div className="filter-row">
-        <select aria-label="风险等级">
+        <select
+          aria-label="风险等级"
+          onChange={(event) => updateFilter("riskLevel", event.target.value)}
+          value={filters.riskLevel ?? ""}
+        >
           {risks.map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
           ))}
         </select>
-        <select aria-label="问题状态">
+        <select
+          aria-label="问题状态"
+          onChange={(event) => updateFilter("status", event.target.value)}
+          value={filters.status ?? ""}
+        >
           {statuses.map(([value, label]) => (
             <option key={value} value={value}>
               {label}
@@ -50,7 +81,7 @@ export function IssueList({ issues, selectedIssueId, onSelect }: IssueListProps)
         </select>
       </div>
       <div className="issue-items">
-        {issues.map((issue) => (
+        {filteredIssues.map((issue) => (
           <button
             className={issue.id === selectedIssueId ? "issue-item selected" : "issue-item"}
             key={issue.id}
@@ -63,6 +94,7 @@ export function IssueList({ issues, selectedIssueId, onSelect }: IssueListProps)
             <span>{issue.status}</span>
           </button>
         ))}
+        {!filteredIssues.length && <p className="empty-state">当前筛选下没有问题。</p>}
       </div>
     </div>
   );

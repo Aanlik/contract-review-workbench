@@ -1,6 +1,6 @@
 # 合同 AI 审查工作台
 
-本项目是本地 Web 版合同 AI 审查工作台的 MVP 骨架。第一阶段已包含后端基础 API、审核记录、文件上传、OCR/PDF 解析接口、OpenAI-compatible AI Provider、人工标记问题服务、前端审查工作台骨架和 Markdown 导出。
+本项目是本地 Web 版合同 AI 审查工作台的 MVP。当前版本已包含后端基础 API、审核记录、文件上传、OCR/PDF 解析接口、OpenAI-compatible AI Provider、AI 连接测试、流程合规审计种子规则、人工标记、问题级 AI 对话、前端审查工作台和 Markdown 导出。
 
 ## 后端启动
 
@@ -40,7 +40,7 @@ npm run build
 ## 当前边界
 
 - PaddleOCR 尚未作为运行时依赖接入，当前先保留 OCR Provider 接口。
-- 流程合规审计的日期抽取、节点比对和盖章检测将在后续实现。
+- 流程合规审计已支持基础日期比对和盖章缺失提示，复杂审批节点语义审计后续增强。
 - DOCX/PDF 正式报告导出将在 Markdown 导出稳定后实现。
 
 ## 免责声明
