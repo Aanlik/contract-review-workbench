@@ -6,6 +6,7 @@ import {
   createManualIssue,
   exportCase,
   getCaseChat,
+  getIssueChat,
   listCaseDocuments,
   listCaseFiles,
   listIssues,
@@ -55,7 +56,9 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   async function refreshIssues() {
     const nextIssues = await listIssues(caseId);
     setIssues(nextIssues);
-    if (!selectedIssueId && nextIssues[0]) setSelectedIssueId(nextIssues[0].id);
+    if (!nextIssues.some((issue) => issue.id === selectedIssueId)) {
+      setSelectedIssueId(nextIssues[0]?.id);
+    }
   }
 
   async function refreshFiles() {
@@ -67,7 +70,9 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   }
 
   async function refreshChat() {
-    const chat = await getCaseChat(caseId);
+    const chat = selectedIssueId
+      ? await getIssueChat(caseId, selectedIssueId)
+      : await getCaseChat(caseId);
     setMessages(chat.messages);
   }
 
@@ -75,8 +80,11 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
     refreshIssues().catch((error) => setStatus(error.message));
     refreshFiles().catch(() => setFiles([]));
     refreshDocuments().catch(() => setDocuments([]));
-    refreshChat().catch(() => setMessages([]));
   }, [caseId]);
+
+  useEffect(() => {
+    refreshChat().catch(() => setMessages([]));
+  }, [caseId, selectedIssueId]);
 
   async function handleCreateManualIssue(payload: ManualIssuePayload) {
     const next = await createManualIssue(caseId, payload);

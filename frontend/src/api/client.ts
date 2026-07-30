@@ -252,6 +252,11 @@ export async function getCaseChat(caseId: number): Promise<AiConversation> {
   return fromSnakeCaseConversation(await parseJsonResponse(response));
 }
 
+export async function getIssueChat(caseId: number, issueId: number): Promise<AiConversation> {
+  const response = await fetch(`${API_BASE}/issues/${issueId}/chat?case_id=${caseId}`);
+  return fromSnakeCaseConversation(await parseJsonResponse(response));
+}
+
 export async function sendCaseChat(caseId: number, message: string): Promise<AiConversation> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/chat`, {
     method: "POST",

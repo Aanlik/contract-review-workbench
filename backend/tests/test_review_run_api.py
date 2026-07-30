@@ -192,4 +192,10 @@ def test_reanalyze_uses_persisted_ocr_blocks_when_source_file_is_missing(db_sess
     response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "看日期"})
     assert response.status_code == 201
     issues = client.get(f"/api/cases/{review_case.id}/issues").json()
-    assert any(issue["title"] == "法审日期晚于合同签订日期" for issue in issues)
+    issue = next(issue for issue in issues if issue["title"] == "法审日期晚于合同签订日期")
+    assert {ref["file_id"] for ref in issue["evidence_refs"]} == {contract_file.id, flow_file.id}
+    assert {ref["page_number"] for ref in issue["evidence_refs"]} == {1}
+    assert {ref["ocr_block_id"] for ref in issue["evidence_refs"]} == {
+        contract_page.ocr_blocks[0].id,
+        flow_page.ocr_blocks[0].id,
+    }
