@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { IssueList } from "./IssueList";
 
 describe("IssueList", () => {
-  it("renders issue title, source, risk level, and status", () => {
+  it("renders Chinese labels for source, risk level, and status", () => {
     render(
       <IssueList
         filters={{}}
@@ -25,8 +25,11 @@ describe("IssueList", () => {
       />,
     );
     expect(screen.getByText("法审晚于签订日期")).toBeTruthy();
-    expect(screen.getByText("high")).toBeTruthy();
-    expect(screen.getByText("ai")).toBeTruthy();
-    expect(screen.getByText("pending")).toBeTruthy();
+    expect(document.querySelector(".risk-tag")?.textContent).toBe("高风险");
+    expect(document.querySelector(".source-tag")?.textContent).toBe("人工智能审查");
+    expect(document.querySelector(".status-tag")?.textContent).toBe("待处理");
+    expect(screen.queryByText("high")).toBeNull();
+    expect(screen.queryByText("ai")).toBeNull();
+    expect(screen.queryByText("pending")).toBeNull();
   });
 });

@@ -16,6 +16,7 @@ import {
   listIssues,
   reanalyzeAsync,
   getTask,
+  retryOcr,
   sendCaseChat,
   sendIssueChat,
   updateIssue,
@@ -37,6 +38,7 @@ import { IssueDetail } from "../components/IssueDetail";
 import { IssueList } from "../components/IssueList";
 import { VersionComparison } from "../components/VersionComparison";
 import { loadWorkspaceState, saveWorkspaceState } from "../state/workspace";
+import { localizeUiText } from "../ui/labels";
 
 type ReviewWorkspacePageProps = {
   caseId: number;
@@ -61,11 +63,22 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   const [exportFormat, setExportFormat] = useState<"markdown" | "docx" | "pdf">("markdown");
   const [exportScope, setExportScope] = useState<"final" | "all" | "high_and_medium" | "confirmed">("final");
   const [batchDeleteTarget, setBatchDeleteTarget] = useState<number[] | null>(null);
+  const [retryingFileId, setRetryingFileId] = useState<number | null>(null);
 
   const selectedIssue = useMemo(
     () => issues.find((issue) => issue.id === selectedIssueId),
     [issues, selectedIssueId],
   );
+  const evidenceFocus = useMemo(() => {
+    if (!selectedIssue) return undefined;
+    const evidence = selectedIssue.evidenceRefs?.[0];
+    return {
+      issueId: selectedIssue.id,
+      fileId: evidence?.fileId ?? null,
+      pageNumber: evidence?.pageNumber ?? null,
+      ocrBlockId: evidence?.ocrBlockId ?? null,
+    };
+  }, [selectedIssue]);
 
   useEffect(() => {
     const state = loadWorkspaceState();
@@ -163,6 +176,40 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
     }
   }
 
+  async function handleRetryOcr(fileId: number) {
+    setRetryingFileId(fileId);
+    setStatus("正在提交扫描识别重试任务...");
+    try {
+      const { taskId } = await retryOcr(caseId, fileId);
+      setStatus("扫描识别重试已提交，正在后台处理...");
+      await new Promise<TaskStatus>((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const task = await getTask(taskId);
+            if (task.progress) setStatus(task.progress);
+            if (task.status === "completed" || task.status === "failed") {
+              clearInterval(interval);
+              if (task.status === "failed") reject(new Error(task.error || "扫描识别失败"));
+              else resolve(task);
+            }
+          } catch (error) {
+            clearInterval(interval);
+            reject(error);
+          }
+        }, 800);
+      });
+      await refreshFiles();
+      await refreshDocuments();
+      setStatus("扫描识别完成，已刷新材料页面。");
+    } catch (error) {
+      await refreshFiles();
+      await refreshDocuments();
+      setStatus(error instanceof Error ? error.message : "扫描识别失败");
+    } finally {
+      setRetryingFileId(null);
+    }
+  }
+
   async function handleSendChat(message: string) {
     const conversation = selectedIssueId
       ? await sendIssueChat(caseId, selectedIssueId, message)
@@ -241,9 +288,9 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
             <option value="confirmed">已确认</option>
           </select>
           <select onChange={(e) => setExportFormat(e.target.value as any)} value={exportFormat}>
-            <option value="markdown">Markdown</option>
-            <option value="docx">Word (DOCX)</option>
-            <option value="pdf">PDF/HTML</option>
+            <option value="markdown">文本文件</option>
+            <option value="docx">可编辑文档</option>
+            <option value="pdf">网页文件</option>
           </select>
           <button onClick={handleExport} type="button">导出报告</button>
         </div>
@@ -270,10 +317,14 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
               onReanalyze={handleReanalyze}
             />
             <EvidenceViewer
+              caseId={caseId}
               documents={documents}
               files={files}
+              focusRequest={evidenceFocus}
               issue={selectedIssue}
               onCreateManualIssue={handleCreateManualIssue}
+              onRetryOcr={handleRetryOcr}
+              retryingFileId={retryingFileId}
             />
           </div>
           <div className="workspace-right">
@@ -282,7 +333,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
               onApplyAsNewIssue={handleApplyAsNewIssue}
               onApplyAsSuggestion={handleApplySuggestion}
               onSend={handleSendChat}
-              scopeLabel={selectedIssue ? `问题: ${selectedIssue.title}` : "整份合同"}
+              scopeLabel={selectedIssue ? `问题：${localizeUiText(selectedIssue.title)}` : "整份合同"}
             />
           </div>
         </div>

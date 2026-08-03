@@ -1,4 +1,5 @@
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -39,6 +40,10 @@ class PaddleOcrProvider:
             raise RuntimeError(
                 "PaddleOCR is not installed. Install the OCR extra before parsing scanned contracts."
             ) from exc
+
+        if hasattr(PaddleOCR, "predict"):
+            return self._recognize_with_v3(PaddleOCR, image_path)
+
         engine = PaddleOCR(use_angle_cls=True, lang="ch")
         result = engine.ocr(str(image_path), cls=True)
         rows = result[0] if result and isinstance(result[0], list) else result
@@ -55,6 +60,30 @@ class PaddleOcrProvider:
                     order_index=order_index,
                 )
             )
+        return blocks
+
+    def _recognize_with_v3(self, paddle_ocr, image_path: Path) -> list[ParsedBlock]:
+        engine = paddle_ocr(lang="ch", use_textline_orientation=True)
+        results = engine.predict(str(image_path))
+        if isinstance(results, dict) or hasattr(results, "to_dict"):
+            results = [results]
+
+        blocks: list[ParsedBlock] = []
+        for result in results:
+            data = result.to_dict() if hasattr(result, "to_dict") else result
+            polygons = data.get("dt_polys") or []
+            texts = data.get("rec_texts") or []
+            scores = data.get("rec_scores") or []
+            for polygon, text, score in zip(polygons, texts, scores, strict=False):
+                blocks.append(
+                    ParsedBlock(
+                        text=str(text),
+                        bbox=normalize_ocr_bbox(polygon),
+                        confidence=float(score),
+                        source="ocr",
+                        order_index=len(blocks),
+                    )
+                )
         return blocks
 
 
@@ -163,7 +192,12 @@ class DocumentParser:
         self.ocr_dpi = ocr_dpi
         self.preprocess_images = preprocess_images
 
-    def extract_text(self, file_path: Path, file_type: str) -> list[ParsedPage]:
+    def extract_text(
+        self,
+        file_path: Path,
+        file_type: str,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[ParsedPage]:
         if file_path.suffix.lower() in {".txt", ".md"}:
             text = file_path.read_text(encoding="utf-8", errors="ignore").strip()
             if not text:
@@ -184,16 +218,20 @@ class DocumentParser:
             ]
 
         if file_type == "contract":
-            return self._extract_with_ocr(file_path)
+            return self._extract_with_ocr(file_path, progress_callback)
 
         if file_path.suffix.lower() == ".pdf":
             pdf_pages = self._extract_pdf_text(file_path)
             if self._has_usable_text(pdf_pages):
                 return pdf_pages
 
-        return self._extract_with_ocr(file_path)
+        return self._extract_with_ocr(file_path, progress_callback)
 
-    def _extract_with_ocr(self, file_path: Path) -> list[ParsedPage]:
+    def _extract_with_ocr(
+        self,
+        file_path: Path,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[ParsedPage]:
         if file_path.suffix.lower() == ".pdf":
             with tempfile.TemporaryDirectory(prefix="contract-ocr-pages-") as temp_dir:
                 try:
@@ -201,6 +239,7 @@ class DocumentParser:
                 except Exception as exc:
                     raise RuntimeError(f"OCR PDF rendering failed: {exc}") from exc
                 pages: list[ParsedPage] = []
+                total_pages = len(image_paths)
                 for page_number, image_path in enumerate(image_paths, start=1):
                     ocr_path = self.preprocessor.preprocess(image_path) if self.preprocess_images else image_path
                     pages.append(
@@ -209,9 +248,13 @@ class DocumentParser:
                             blocks=self.ocr_provider.recognize_page(ocr_path),
                         )
                     )
+                    if progress_callback:
+                        progress_callback(page_number, total_pages)
                 return pages
         ocr_path = self.preprocessor.preprocess(file_path) if self.preprocess_images else file_path
         blocks = self.ocr_provider.recognize_page(ocr_path)
+        if progress_callback:
+            progress_callback(1, 1)
         return [ParsedPage(page_number=1, blocks=blocks)]
 
     def _extract_pdf_text(self, file_path: Path) -> list[ParsedPage]:

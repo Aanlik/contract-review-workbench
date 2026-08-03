@@ -87,6 +87,44 @@ def test_batch_delete(db_session):
     assert remaining[0]["title"] == "人工标记C"
 
 
+def test_list_issues_returns_current_review_version_only(db_session):
+    case = ReviewCase(title="当前版本问题列表", current_version=2)
+    db_session.add(case)
+    db_session.commit()
+    db_session.refresh(case)
+    db_session.add_all(
+        [
+            Issue(
+                case_id=case.id,
+                issue_type="process_audit",
+                source="ai",
+                risk_level="medium",
+                title="历史版本告警",
+                description="旧版本问题",
+                status="pending",
+                review_version=1,
+            ),
+            Issue(
+                case_id=case.id,
+                issue_type="process_audit",
+                source="ai",
+                risk_level="low",
+                title="当前版本告警",
+                description="当前版本问题",
+                status="pending",
+                review_version=2,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    client = make_client(db_session)
+    response = client.get(f"/api/cases/{case.id}/issues")
+
+    assert response.status_code == 200
+    assert [issue["title"] for issue in response.json()] == ["当前版本告警"]
+
+
 # ── Version Diff ──
 
 def test_version_diff_returns_changes(db_session):

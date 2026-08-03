@@ -1,5 +1,7 @@
+import httpx
 from fastapi.testclient import TestClient
 
+from app.core.crypto import encrypt_api_key
 from app.core.database import get_session
 from app.main import create_app
 from app.models.review import AppSetting, DocumentPage, OcrBlock, ReviewCase, UploadedFile
@@ -83,7 +85,7 @@ def test_reanalyze_uses_configured_ai_to_create_contract_risk(db_session, tmp_pa
             key="ai",
             value={
                 "base_url": "https://api.example.com/v1",
-                "api_key": "sk-test",
+                "api_key": encrypt_api_key("sk-test"),
                 "model": "law-model",
                 "temperature": 0.1,
                 "timeout_seconds": 45,
@@ -92,12 +94,16 @@ def test_reanalyze_uses_configured_ai_to_create_contract_risk(db_session, tmp_pa
     )
     db_session.commit()
 
+    observed = {}
+
     class FakeProvider:
         def __init__(self, settings):
             self.settings = settings
+            observed["api_key"] = settings.api_key
 
         def chat(self, messages):
             return """
+            ```json
             {
               "issues": [
                 {
@@ -112,6 +118,7 @@ def test_reanalyze_uses_configured_ai_to_create_contract_risk(db_session, tmp_pa
                 }
               ]
             }
+            ```
             """
 
     monkeypatch.setattr("app.services.review_run_service.OpenAICompatibleProvider", FakeProvider)
@@ -120,7 +127,56 @@ def test_reanalyze_uses_configured_ai_to_create_contract_risk(db_session, tmp_pa
     response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "法律风险"})
     assert response.status_code == 201
     issues = client.get(f"/api/cases/{review_case.id}/issues").json()
+    assert observed["api_key"] == "sk-test"
     assert any(issue["title"] == "解除权限制过严" for issue in issues)
+
+
+def test_reanalyze_reports_ai_timeout_reason(db_session, tmp_path, monkeypatch):
+    review_case = ReviewCase(title="智能审查超时提示")
+    db_session.add(review_case)
+    db_session.commit()
+    db_session.refresh(review_case)
+    contract = tmp_path / "contract.txt"
+    contract.write_text("甲方不得以任何理由解除本合同。", encoding="utf-8")
+    db_session.add_all(
+        [
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="contract",
+                file_name=contract.name,
+                original_path=str(contract),
+                parse_status="uploaded",
+            ),
+            AppSetting(
+                key="ai",
+                value={
+                    "base_url": "https://api.example.com/v1",
+                    "api_key": "sk-test",
+                    "model": "law-model",
+                    "temperature": 0.1,
+                    "timeout_seconds": 45,
+                },
+            ),
+        ]
+    )
+    db_session.commit()
+
+    class TimeoutProvider:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def chat(self, messages):
+            raise httpx.ReadTimeout("model response timed out")
+
+    monkeypatch.setattr("app.services.review_run_service.OpenAICompatibleProvider", TimeoutProvider)
+
+    client = make_client(db_session)
+    response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "法律风险"})
+
+    assert response.status_code == 201
+    issues = client.get(f"/api/cases/{review_case.id}/issues").json()
+    failure = next(issue for issue in issues if issue["title"] == "AI 合同审查调用失败")
+    assert "模型响应超时" in failure["description"]
 
 
 def test_reanalyze_flags_scanned_contract_when_text_is_unavailable(db_session, tmp_path):
@@ -236,6 +292,63 @@ def test_reanalyze_separates_legal_review_and_contract_approval_materials(db_ses
     assert "未识别到最终审批通过记录" not in titles
 
 
+def test_reanalyze_detects_oa_approval_timeline_after_date(db_session, tmp_path):
+    review_case = ReviewCase(title="OA签批时间线审核")
+    db_session.add(review_case)
+    db_session.commit()
+    db_session.refresh(review_case)
+
+    contract = tmp_path / "contract.txt"
+    contract.write_text("合同签订日期：2026年7月18日\n甲方盖章：有\n乙方盖章：有", encoding="utf-8")
+    legal_report = tmp_path / "legal-report.txt"
+    legal_report.write_text("法审完成：2026年7月17日\n审核意见：同意", encoding="utf-8")
+    contract_approval = tmp_path / "contract-approval.txt"
+    contract_approval.write_text(
+        "合同签批文件\n2026-07-19 11:04:11 [公司领导 / 批准]\n"
+        "2026-07-19 09:25:33 [会签领导 / 批准]",
+        encoding="utf-8",
+    )
+    db_session.add_all(
+        [
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="contract",
+                file_name=contract.name,
+                original_path=str(contract),
+                parse_status="uploaded",
+            ),
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="legal_review_report",
+                file_name=legal_report.name,
+                original_path=str(legal_report),
+                parse_status="uploaded",
+            ),
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="contract_approval",
+                file_name=contract_approval.name,
+                original_path=str(contract_approval),
+                parse_status="uploaded",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    client = make_client(db_session)
+    response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "流程审计"})
+
+    assert response.status_code == 201
+    issues = client.get(f"/api/cases/{review_case.id}/issues").json()
+    approval_issue = next(issue for issue in issues if issue["title"] == "合同签订日期早于审批通过日期")
+    assert "未识别到最终审批通过记录" not in {issue["title"] for issue in issues}
+    assert approval_issue["evidence_refs"]
+    assert any(
+        "2026-07-19 11:04:11 [公司领导 / 批准]" in evidence["original_text"]
+        for evidence in approval_issue["evidence_refs"]
+    )
+
+
 def test_reanalyze_uses_optional_matter_material_for_scope_consistency(db_session, tmp_path, monkeypatch):
     review_case = ReviewCase(title="事项一致性审核")
     db_session.add(review_case)
@@ -288,7 +401,7 @@ def test_reanalyze_uses_optional_matter_material_for_scope_consistency(db_sessio
 
         def chat(self, messages):
             joined = "\n".join(message["content"] for message in messages)
-            if "事项签报或会议纪要" not in joined:
+            if "不审查 OA 签批" in joined:
                 return '{"issues":[]}'
             assert "合同范围：采购服务器并提供安装服务" in joined
             return (

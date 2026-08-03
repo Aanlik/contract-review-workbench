@@ -12,6 +12,7 @@ import {
 } from "../api/client";
 import type { AiSettings, OcrInstallTarget, OcrRuntimeStatus, SystemSettings, TaskStatus } from "../api/types";
 import { loadWorkspaceState, saveWorkspaceState } from "../state/workspace";
+import { labelOf, statusLabels } from "../ui/labels";
 
 const emptySettings: AiSettings = {
   baseUrl: "",
@@ -43,7 +44,7 @@ export function SettingsPage() {
       .then((value) => {
         if (value) setSettings(value);
       })
-      .catch(() => setStatus("尚未读取到 AI 配置。"));
+      .catch(() => setStatus("尚未读取到智能审查配置。"));
     getSystemSettings()
       .then(setSystemSettings)
       .catch(() => setStatus("尚未读取到系统配置。"));
@@ -58,12 +59,12 @@ export function SettingsPage() {
         setOcrInstallTask(task);
         if (task.status === "completed") {
           setIsInstallingOcr(false);
-          setStatus("OCR 依赖安装完成，正在重新检测。");
+          setStatus("扫描识别依赖安装完成，正在重新检测。");
           await refreshOcrStatus();
         }
         if (task.status === "failed") {
           setIsInstallingOcr(false);
-          setStatus("OCR 依赖安装失败，请查看任务错误信息。");
+          setStatus("扫描识别依赖安装失败，请查看任务错误信息。");
         }
       } catch (error) {
         setIsInstallingOcr(false);
@@ -77,12 +78,12 @@ export function SettingsPage() {
     event.preventDefault();
     await saveAiSettings(settings);
     await saveSystemSettings(systemSettings);
-    setStatus("AI、OCR 和本地存储配置已保存。");
+    setStatus("智能审查、扫描识别和本地存储配置已保存。");
   }
 
   async function handleTestConnection() {
     setIsTesting(true);
-    setStatus("正在测试 AI 接口连接...");
+    setStatus("正在测试智能接口连接...");
     try {
       const result = await testAiSettings(settings);
       const persisted = { ...result, testedAt: new Date().toISOString() };
@@ -94,7 +95,7 @@ export function SettingsPage() {
       const failResult = {
         ok: false,
         model: settings.model,
-        message: error instanceof Error ? error.message : "AI 接口测试失败。",
+        message: error instanceof Error ? error.message : "智能接口测试失败。",
         latencyMs: 0,
         testedAt: new Date().toISOString(),
       };
@@ -113,7 +114,7 @@ export function SettingsPage() {
       const result = await getOcrRuntimeStatus();
       setOcrStatus(result);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "OCR 安装状态检测失败。");
+      setStatus(error instanceof Error ? error.message : "扫描识别安装状态检测失败。");
     } finally {
       setIsCheckingOcr(false);
     }
@@ -121,7 +122,7 @@ export function SettingsPage() {
 
   async function handleInstallOcr(target: OcrInstallTarget) {
     setIsInstallingOcr(true);
-    setStatus("正在创建 OCR 依赖安装任务...");
+    setStatus("正在创建扫描识别依赖安装任务...");
     try {
       const result = await installOcrDependencies(target);
       const task = await getTask(result.taskId);
@@ -129,7 +130,7 @@ export function SettingsPage() {
       setStatus(result.message);
     } catch (error) {
       setIsInstallingOcr(false);
-      setStatus(error instanceof Error ? error.message : "OCR 依赖安装任务创建失败。");
+      setStatus(error instanceof Error ? error.message : "扫描识别依赖安装任务创建失败。");
     }
   }
 
@@ -153,21 +154,21 @@ export function SettingsPage() {
     <section className="settings-page">
       <header className="page-header">
         <div>
-          <p className="section-kicker">Provider & OCR</p>
+          <p className="section-kicker">系统配置</p>
           <h1>系统设置</h1>
         </div>
-        <span className="page-note">合同文本会发送到你配置的第三方 AI 服务</span>
+        <span className="page-note">合同文本会发送到你配置的第三方智能服务</span>
       </header>
       <form className="form-grid" onSubmit={handleSubmit}>
         <div className="settings-card">
           <div className="settings-card-head">
             <div>
-              <h2>AI 接口</h2>
-              <p>OpenAI-compatible Chat Completions 接口，用于合同风险审查和 AI 互动。</p>
+              <h2>智能审查接口</h2>
+              <p>第三方对话接口，用于合同风险审查和人工智能互动。</p>
             </div>
           </div>
           <label>
-            AI Base URL
+            接口地址
             <input
               onChange={(event) => setSettings((s) => ({ ...s, baseUrl: event.target.value }))}
               placeholder="https://api.deepseek.com/v1"
@@ -175,7 +176,7 @@ export function SettingsPage() {
             />
           </label>
           <label>
-            API Key
+            接口密钥
             <input
               onChange={(event) => setSettings((s) => ({ ...s, apiKey: event.target.value }))}
               placeholder="sk-..."
@@ -192,7 +193,7 @@ export function SettingsPage() {
             />
           </label>
           <label>
-            Temperature（0-2）
+            随机程度（0-2）
             <input
               max={2}
               min={0}
@@ -219,7 +220,7 @@ export function SettingsPage() {
               <div className={`test-result ${testResult.ok ? "test-ok" : "test-fail"}`}>
                 <span className="test-status">{testResult.ok ? "✓ 连接正常" : "✗ 连接失败"}</span>
                 <span className="test-detail">
-                  模型: {testResult.model} · {testResult.latencyMs}ms
+                  模型：{testResult.model} · {testResult.latencyMs} 毫秒
                   {testResult.testedAt && ` · ${new Date(testResult.testedAt).toLocaleString("zh-CN")}`}
                 </span>
                 {!testResult.ok && <span className="test-error">{testResult.message}</span>}
@@ -231,19 +232,19 @@ export function SettingsPage() {
         <div className="settings-card">
           <div className="settings-card-head">
             <div>
-              <h2>OCR 与存储</h2>
+              <h2>扫描识别与存储</h2>
               <p>扫描件识别引擎、预处理参数和本地文件存储路径。</p>
             </div>
           </div>
           <label>
-            OCR 引擎
+            扫描识别引擎
             <select
               onChange={(event) =>
                 setSystemSettings((s) => ({ ...s, ocrEngine: event.target.value as SystemSettings["ocrEngine"] }))}
               value={systemSettings.ocrEngine}
             >
-              <option value="paddleocr">PaddleOCR（高精度中文）</option>
-              <option value="rapidocr">RapidOCR（轻量快速）</option>
+              <option value="paddleocr">高精度中文识别引擎</option>
+              <option value="rapidocr">轻量快速识别引擎</option>
             </select>
           </label>
           <label>
@@ -254,7 +255,7 @@ export function SettingsPage() {
             />
           </label>
           <label>
-            OCR DPI（120-500）
+            扫描清晰度（120-500）
             <input
               max={500}
               min={120}
@@ -275,9 +276,9 @@ export function SettingsPage() {
           <div className="ocr-runtime-panel">
             <div className="ocr-runtime-head">
               <div>
-                <h3>本机 OCR 依赖</h3>
+                <h3>本机识别依赖</h3>
                 <p>
-                  当前引擎：{systemSettings.ocrEngine === "paddleocr" ? "PaddleOCR" : "RapidOCR"}
+                  当前引擎：{systemSettings.ocrEngine === "paddleocr" ? "高精度中文识别引擎" : "轻量快速识别引擎"}
                   {ocrStatus && ` · ${ocrStatus.currentEngineInstalled ? "可用" : "不可用"}`}
                 </p>
               </div>
@@ -287,10 +288,10 @@ export function SettingsPage() {
             </div>
 
             <div className="ocr-runtime-list">
-              {renderEngineStatus("rapidocr", "RapidOCR")}
-              {renderEngineStatus("rapidocr_onnxruntime", "RapidOCR Legacy")}
-              {renderEngineStatus("onnxruntime", "ONNX Runtime")}
-              {renderEngineStatus("paddleocr", "PaddleOCR")}
+              {renderEngineStatus("rapidocr", "轻量快速识别引擎")}
+              {renderEngineStatus("rapidocr_onnxruntime", "旧版兼容识别引擎")}
+              {renderEngineStatus("onnxruntime", "本地推理运行环境")}
+              {renderEngineStatus("paddleocr", "高精度中文识别引擎")}
             </div>
 
             {!ocrStatus?.installSupported && (
@@ -303,10 +304,10 @@ export function SettingsPage() {
                 onChange={(event) => setOcrInstallTarget(event.target.value as OcrInstallTarget)}
                 value={ocrInstallTarget}
               >
-                <option value="rapid">RapidOCR</option>
-                <option value="rapid-legacy">RapidOCR Legacy</option>
-                <option value="paddle">PaddleOCR</option>
-                <option value="all">全部 OCR 依赖</option>
+                <option value="rapid">轻量快速识别引擎</option>
+                <option value="rapid-legacy">旧版兼容识别引擎</option>
+                <option value="paddle">高精度中文识别引擎</option>
+                <option value="all">全部识别依赖</option>
               </select>
               <button
                 disabled={isInstallingOcr || ocrStatus?.installSupported === false}
@@ -328,7 +329,7 @@ export function SettingsPage() {
             {ocrInstallTask && (
               <div className="task-card">
                 <div className="task-header">
-                  <span>安装任务：{ocrInstallTask.status}</span>
+                  <span>安装任务：{labelOf(statusLabels, ocrInstallTask.status)}</span>
                   <strong>{ocrInstallTask.progressPercent}%</strong>
                 </div>
                 <div className="task-progress">

@@ -12,8 +12,8 @@ const PROGRESS_STEPS = [
   "文件上传",
   "加载材料和解析文本",
   "流程合规审计",
-  "OCR 识别检查",
-  "AI 合同法律风险审查",
+  "扫描识别检查",
+  "智能合同法律风险审查",
   "生成审核结果",
 ];
 
@@ -24,7 +24,7 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
   const [contract, setContract] = useState<File | null>(null);
   const [legalReviewReport, setLegalReviewReport] = useState<File | null>(null);
   const [contractApproval, setContractApproval] = useState<File | null>(null);
-  const [matterMaterial, setMatterMaterial] = useState<File | null>(null);
+  const [matterMaterials, setMatterMaterials] = useState<File[]>([]);
   const [status, setStatus] = useState("");
   const [activeStep, setActiveStep] = useState(savedDraft?.activeStep ?? -1);
   const [uploadProgress, setUploadProgress] = useState(savedDraft?.uploadProgress ?? 0);
@@ -53,7 +53,12 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
           currentStep: taskProg.currentStep,
           totalSteps: taskProg.totalSteps,
         } : savedDraft?.taskProgress,
-        fileNames: [contract?.name, legalReviewReport?.name, contractApproval?.name, matterMaterial?.name].filter(Boolean) as string[],
+        fileNames: [
+          contract?.name,
+          legalReviewReport?.name,
+          contractApproval?.name,
+          ...matterMaterials.map((file) => file.name),
+        ].filter(Boolean) as string[],
         startedAt: savedDraft?.startedAt ?? new Date().toISOString(),
       },
     });
@@ -63,6 +68,14 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
     const state = loadWorkspaceState();
     const { newCaseDraft, ...rest } = state;
     saveWorkspaceState(rest);
+  }
+
+  function handleMatterMaterialsChange(fileList: FileList | null) {
+    const selected = Array.from(fileList ?? []);
+    if (selected.length > 4) {
+      setStatus("最多上传 4 份事项签报或会议纪要。");
+    }
+    setMatterMaterials(selected.slice(0, 4));
   }
 
   function stopPolling() {
@@ -148,8 +161,8 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
     event.preventDefault();
     if (!title.trim()) { setStatus("请先填写合同名称。"); return; }
     if (!contract) { setStatus("请上传合同扫描件。"); return; }
-    if (!legalReviewReport) { setStatus("请上传法审签报 PDF。"); return; }
-    if (!contractApproval) { setStatus("请上传合同签批文件 PDF。"); return; }
+    if (!legalReviewReport) { setStatus("请上传法审签报文件。"); return; }
+    if (!contractApproval) { setStatus("请上传合同签批文件。"); return; }
     setIsSubmitting(true);
     setTaskProgress(null);
     try {
@@ -175,15 +188,15 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
       setUploadProgress(0);
       await uploadCaseFile(reviewCase.id, "contract_approval", contractApproval, onProgress);
 
-      if (matterMaterial) {
-        setStatus(`正在上传事项签报/会议纪要: ${matterMaterial.name}...`);
+      for (const [index, matterMaterial] of matterMaterials.entries()) {
+        setStatus(`正在上传事项材料 ${index + 1}/${matterMaterials.length}: ${matterMaterial.name}...`);
         setUploadProgress(0);
         await uploadCaseFile(reviewCase.id, "matter_report", matterMaterial, onProgress);
       }
 
       setUploadProgress(100);
       setActiveStep(1);
-      setStatus("文件上传完成，正在启动 AI 审核...");
+      setStatus("文件上传完成，正在启动智能审核...");
 
       const { taskId } = await reanalyzeAsync(reviewCase.id, note || "首次审核");
       setStatus("审核任务已提交，正在后台处理...");
@@ -208,7 +221,7 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
     <section className="new-case-page">
       <header className="page-header">
         <div>
-          <p className="section-kicker">Upload & Analyze</p>
+          <p className="section-kicker">文件与识别</p>
           <h1>新建审核</h1>
         </div>
       </header>
@@ -254,22 +267,45 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
           {contract && <span className="file-info">{contract.name} ({(contract.size / 1024 / 1024).toFixed(1)} MB)</span>}
         </label>
         <label>
-          法审签报 PDF <span className="required-mark">必传</span>
+            法审签报文件 <span className="required-mark">必传</span>
           <input accept=".pdf,.txt,.md" onChange={(event) => setLegalReviewReport(event.target.files?.[0] ?? null)} required type="file" />
           <small className="field-hint">用于核对法审完成日期是否早于合同签订日期。</small>
           {legalReviewReport && <span className="file-info">{legalReviewReport.name}</span>}
         </label>
         <label>
-          合同签批文件 PDF <span className="required-mark">必传</span>
+            合同签批文件 <span className="required-mark">必传</span>
           <input accept=".pdf,.txt,.md" onChange={(event) => setContractApproval(event.target.files?.[0] ?? null)} required type="file" />
           <small className="field-hint">用于核对合同签订日期是否早于最终审批通过日期。</small>
           {contractApproval && <span className="file-info">{contractApproval.name}</span>}
         </label>
         <label>
-          事项签报 / 会议纪要 PDF <span className="optional-mark">可选</span>
-          <input accept=".pdf,.txt,.md" onChange={(event) => setMatterMaterial(event.target.files?.[0] ?? null)} type="file" />
-          <small className="field-hint">用于核对审批同意的事项与合同内容、范围是否一致。</small>
-          {matterMaterial && <span className="file-info">{matterMaterial.name}</span>}
+            事项签报 / 会议纪要文件 <span className="optional-mark">可选</span>
+            <input
+              accept=".pdf,.txt,.md"
+              aria-label="事项签报 / 会议纪要文件"
+              multiple
+              onChange={(event) => handleMatterMaterialsChange(event.target.files)}
+              type="file"
+            />
+            <small className="field-hint">用于核对审批同意的事项与合同内容、范围是否一致。</small>
+            {matterMaterials.length > 0 && (
+              <div className="matter-material-selection">
+                <span className="file-info">已选择 {matterMaterials.length} 份材料</span>
+                {matterMaterials.map((file, index) => (
+                  <div className="selected-file" key={`${file.name}-${file.lastModified}-${index}`}>
+                    <span className="file-info">{file.name}</span>
+                    <button
+                      aria-label={`移除${file.name}`}
+                      className="file-remove"
+                      onClick={() => setMatterMaterials((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      type="button"
+                    >
+                      移除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
         </label>
 
         {isSubmitting && (

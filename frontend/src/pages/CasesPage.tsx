@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { CaseSearchParams, ReviewCase } from "../api/types";
+import { caseStatusLabels, labelOf, riskLabels } from "../ui/labels";
 
 type CasesPageProps = {
   cases: ReviewCase[];
@@ -9,13 +10,6 @@ type CasesPageProps = {
   onDelete: (caseId: number) => void;
   onExport: (caseId: number) => void;
   onSearch: (params: CaseSearchParams) => void;
-};
-
-const riskLabels: Record<string, string> = {
-  high: "高风险",
-  medium: "中风险",
-  low: "低风险",
-  info: "提示",
 };
 
 const riskColors: Record<string, string> = {
@@ -50,7 +44,7 @@ export function CasesPage({ cases, onDelete, onExport, onOpen, onRename, onSearc
     <section className="records-page">
       <header className="page-header">
         <div>
-          <p className="section-kicker">Review Records</p>
+          <p className="section-kicker">审核工作台</p>
           <h1>审核记录</h1>
         </div>
         <span className="page-note">{cases.length} 条记录</span>
@@ -104,13 +98,13 @@ export function CasesPage({ cases, onDelete, onExport, onOpen, onRename, onSearc
               <strong>{item.title}</strong>
               {item.note && <p className="case-note">{item.note}</p>}
             </div>
-            <span className="case-status">{item.status}</span>
+            <span className="case-status">{labelOf(caseStatusLabels, item.status)}</span>
             <span className="case-issues">{item.issueCount} 个问题</span>
             <span
               className="case-risk"
               style={{ color: riskColors[item.highestRiskLevel ?? ""] ?? "#888" }}
             >
-              {item.highestRiskLevel ? riskLabels[item.highestRiskLevel] ?? item.highestRiskLevel : "未评级"}
+              {item.highestRiskLevel ? labelOf(riskLabels, item.highestRiskLevel) : "未评级"}
             </span>
             <div className="row-actions">
               <button onClick={() => onOpen(item.id)} type="button">打开</button>

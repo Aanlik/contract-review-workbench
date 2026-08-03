@@ -186,9 +186,9 @@ export function ExportDialog({ onClose, onExport, open }: ExportDialogProps) {
         <label className="modal-field">
           导出格式
           <select ref={formatRef}>
-            <option value="markdown">Markdown (.md)</option>
-            <option value="docx">Word (.docx)</option>
-            <option value="pdf">PDF / HTML (.html)</option>
+            <option value="markdown">文本文件（.md）</option>
+            <option value="docx">可编辑文档（.docx）</option>
+            <option value="pdf">网页文件（.html）</option>
           </select>
         </label>
         <div className="modal-actions">

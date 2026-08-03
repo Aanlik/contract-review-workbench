@@ -2,6 +2,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -15,6 +16,11 @@ from app.services.file_ingest_service import FileIngestService
 from app.services.page_image_service import PageImageService
 
 router = APIRouter()
+
+
+class OcrRetryResponse(BaseModel):
+    task_id: str
+    file_id: int
 
 AllowedFileType = Literal[
     "contract",
@@ -137,6 +143,32 @@ def get_document_page_image(
         image_path = image_service.resolve(info.relative_path)
 
     return FileResponse(str(image_path), media_type="image/png")
+
+
+@router.post(
+    "/cases/{case_id}/files/{file_id}/retry-ocr",
+    response_model=OcrRetryResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def retry_file_ocr(
+    case_id: int,
+    file_id: int,
+    session: Session = Depends(get_session),
+):
+    get_active_case(case_id, session)
+    uploaded = session.scalar(
+        select(UploadedFile).where(UploadedFile.id == file_id, UploadedFile.case_id == case_id)
+    )
+    if uploaded is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if uploaded.parse_status not in {"ocr_failed", "needs_ocr"}:
+        raise HTTPException(status_code=409, detail="当前材料不需要重新扫描识别")
+
+    try:
+        task_id = FileIngestService(session).ingest_background(file_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return OcrRetryResponse(task_id=task_id, file_id=file_id)
 
 
 @router.post(

@@ -9,8 +9,9 @@ The resulting dist/contract-review/ folder is a portable distribution.
 
 from pathlib import Path
 from importlib.util import find_spec
+import sys
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs
 
 block_cipher = None
 spec_dir = Path(SPECPATH)
@@ -29,7 +30,35 @@ for package in [
 ]:
     if find_spec(package) is None:
         continue
-    package_datas, package_binaries, package_hiddenimports = collect_all(package)
+    if sys.platform == 'darwin' and package == 'onnxruntime':
+        # The full ONNX Runtime package exposes hundreds of optional tooling modules.
+        # macOS only needs the inference extension and its dynamic libraries.
+        package_datas = collect_data_files(package, include_py_files=False)
+        package_binaries = collect_dynamic_libs(package)
+        package_hiddenimports = [
+            'onnxruntime',
+            'onnxruntime.capi._pybind_state',
+            'onnxruntime.capi.onnxruntime_pybind11_state',
+        ]
+    elif sys.platform == 'darwin' and package == 'rapidocr':
+        # RapidOCR selects the ONNX Runtime engine dynamically. Keep its models and
+        # the actual OCR path while excluding optional Paddle/TensorRT/PyTorch code.
+        package_datas = collect_data_files(package, include_py_files=False)
+        package_binaries = collect_dynamic_libs(package)
+        package_hiddenimports = [
+            'rapidocr',
+            'rapidocr.main',
+            'rapidocr.cal_rec_boxes.main',
+            'rapidocr.ch_ppocr_cls.main',
+            'rapidocr.ch_ppocr_det.main',
+            'rapidocr.ch_ppocr_rec.main',
+            'rapidocr.inference_engine.base',
+            'rapidocr.inference_engine.onnxruntime',
+            'rapidocr.inference_engine.onnxruntime.main',
+            'rapidocr.inference_engine.onnxruntime.provider_config',
+        ]
+    else:
+        package_datas, package_binaries, package_hiddenimports = collect_all(package)
     ocr_datas += package_datas
     ocr_binaries += package_binaries
     ocr_hiddenimports += package_hiddenimports

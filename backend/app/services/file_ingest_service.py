@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -6,6 +7,33 @@ from app.models.review import AppSetting, DocumentPage, OcrBlock, UploadedFile
 from app.schemas.settings import SystemSettings
 from app.services.document_parser import DocumentParser, PaddleOcrProvider, RapidOcrProvider
 from app.services.page_image_service import PageImageService
+from app.services.task_queue import task_queue
+
+
+def _run_ocr_retry(task_id: str, uploaded_file_id: int) -> dict:
+    """Run a retry in a worker-owned database session."""
+    from app.core.database import SessionLocal
+
+    session = SessionLocal()
+    try:
+        task_queue.update_progress(task_id, "正在准备扫描识别材料...", step=1, total=3, percent=5)
+
+        def update_ocr_progress(current_page: int, total_pages: int) -> None:
+            percent = 10 + int(current_page / max(total_pages, 1) * 80)
+            task_queue.update_progress(
+                task_id,
+                f"正在识别第 {current_page}/{total_pages} 页...",
+                step=1,
+                total=3,
+                percent=percent,
+            )
+
+        uploaded = FileIngestService(session).retry_ocr(uploaded_file_id, update_ocr_progress)
+        task_queue.update_progress(task_id, "正在保存识别结果和页面图片...", step=2, total=3, percent=95)
+        task_queue.update_progress(task_id, "扫描识别完成。", step=3, total=3, percent=100)
+        return {"file_id": uploaded.id, "status": uploaded.parse_status, "page_count": uploaded.page_count}
+    finally:
+        session.close()
 
 
 class FileIngestService:
@@ -43,34 +71,33 @@ class FileIngestService:
 
     def ingest_background(self, uploaded_file_id: int) -> str:
         """Queue OCR ingest as a background task. Returns task_id."""
-        from app.services.task_queue import task_queue
-
-        task = task_queue.submit(self._ingest_in_background, uploaded_file_id)
-        uploaded = self.session.get(UploadedFile, uploaded_file_id)
-        if uploaded:
-            uploaded.parse_status = "processing"
-            self.session.commit()
-        return task.task_id
-
-    def _ingest_in_background(self, uploaded_file_id: int) -> dict:
         uploaded = self.session.get(UploadedFile, uploaded_file_id)
         if uploaded is None:
-            return {"error": "File not found"}
+            raise ValueError("Uploaded file not found")
+        uploaded.parse_status = "processing"
+        uploaded.parse_method = "ocr"
+        self.session.commit()
+        task = task_queue.submit(_run_ocr_retry, uploaded_file_id, label=f"ocr-retry-{uploaded_file_id}")
+        return task.task_id
+
+    def retry_ocr(
+        self,
+        uploaded_file_id: int,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> UploadedFile:
+        uploaded = self.session.get(UploadedFile, uploaded_file_id)
+        if uploaded is None:
+            raise ValueError("Uploaded file not found")
 
         file_path = Path(uploaded.original_path)
         try:
-            parsed_pages = self.parser.extract_text(file_path, uploaded.file_type)
-        except RuntimeError as exc:
-            uploaded.parse_status = "ocr_failed"
-            self.session.commit()
-            return {"error": str(exc)}
+            parsed_pages = self.parser.extract_text(file_path, uploaded.file_type, progress_callback)
+        except Exception as exc:
+            self._mark_ocr_failed(uploaded)
+            raise RuntimeError(f"OCR 识别失败：{exc}") from exc
 
         self._persist_pages(uploaded, parsed_pages)
-        return {
-            "file_id": uploaded.id,
-            "pages": len(parsed_pages),
-            "status": uploaded.parse_status,
-        }
+        return uploaded
 
     def _persist_pages(self, uploaded: UploadedFile, parsed_pages) -> None:
         uploaded.page_count = len(parsed_pages)

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_session
-from app.models.review import Issue
+from app.models.review import Issue, ReviewCase
 from app.schemas.review import (
     ApplyAiMessageRequest,
     IssueRead,
@@ -29,9 +29,11 @@ class BatchDeleteRequest(BaseModel):
 
 @router.get("/cases/{case_id}/issues", response_model=list[IssueRead])
 def list_case_issues(case_id: int, session: Session = Depends(get_session)):
+    review_case = session.get(ReviewCase, case_id)
+    current_version = review_case.current_version if review_case else 1
     return session.scalars(
         select(Issue)
-        .where(Issue.case_id == case_id)
+        .where(Issue.case_id == case_id, Issue.review_version == current_version)
         .options(selectinload(Issue.evidence_refs))
         .order_by(Issue.id.asc())
     ).all()

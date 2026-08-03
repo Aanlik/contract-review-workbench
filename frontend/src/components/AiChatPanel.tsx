@@ -2,6 +2,12 @@ import { useState } from "react";
 
 import type { AiMessage } from "../api/types";
 
+const roleLabels: Record<string, string> = {
+  user: "我方",
+  assistant: "智能助手",
+  system: "系统",
+};
+
 type AiChatPanelProps = {
   scopeLabel: string;
   messages: AiMessage[];
@@ -28,13 +34,13 @@ export function AiChatPanel({
 
   return (
     <div className="ai-chat">
-      <h2>AI 互动</h2>
+      <h2>智能互动</h2>
       <p>{scopeLabel}</p>
       <div className="chat-history">
         {messages.length ? (
           messages.map((message) => (
             <div className={`chat-message ${message.role}`} key={message.id}>
-              <b>{message.role}</b>
+              <b>{roleLabels[message.role] ?? "消息"}</b>
               <p>{message.content}</p>
             </div>
           ))

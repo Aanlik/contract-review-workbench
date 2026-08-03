@@ -2,7 +2,13 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.services.document_parser import DocumentParser, ParsedBlock, ParsedPage, RapidOcrProvider
+from app.services.document_parser import (
+    DocumentParser,
+    PaddleOcrProvider,
+    ParsedBlock,
+    ParsedPage,
+    RapidOcrProvider,
+)
 
 
 class FakeOcrProvider:
@@ -95,6 +101,49 @@ def test_rapidocr_provider_supports_new_output_object(tmp_path, monkeypatch):
     assert blocks[0].confidence == 0.93
 
 
+def test_paddleocr_provider_supports_v3_predict_results(tmp_path, monkeypatch):
+    sample = tmp_path / "contract.png"
+    sample.write_bytes(b"fake image")
+    captured: dict[str, object] = {}
+
+    class FakeResult(dict):
+        pass
+
+    class FakePaddleOCR:
+        def __init__(self, **kwargs):
+            captured["init"] = kwargs
+
+        def predict(self, image_path):
+            captured["image_path"] = image_path
+            return iter(
+                [
+                    FakeResult(
+                        dt_polys=[[[10, 20], [100, 20], [100, 40], [10, 40]]],
+                        rec_texts=["甲方盖章"],
+                        rec_scores=[0.93],
+                    )
+                ]
+            )
+
+    monkeypatch.setitem(sys.modules, "paddleocr", SimpleNamespace(PaddleOCR=FakePaddleOCR))
+
+    blocks = PaddleOcrProvider().recognize_page(sample)
+
+    assert captured == {
+        "init": {"lang": "ch", "use_textline_orientation": True},
+        "image_path": str(sample),
+    }
+    assert blocks == [
+        ParsedBlock(
+            text="甲方盖章",
+            bbox=[10.0, 20.0, 100.0, 40.0],
+            confidence=0.93,
+            source="ocr",
+            order_index=0,
+        )
+    ]
+
+
 def test_scanned_contract_pdf_is_rendered_to_page_images_before_ocr(tmp_path):
     pdf_path = tmp_path / "scan.pdf"
     image_path = tmp_path / "page.png"
@@ -144,3 +193,35 @@ def test_scanned_contract_pdf_is_rendered_to_page_images_before_ocr(tmp_path):
             ],
         )
     ]
+
+
+def test_scanned_contract_reports_ocr_progress_for_each_page(tmp_path):
+    pdf_path = tmp_path / "scan.pdf"
+    first_image_path = tmp_path / "page-1.png"
+    second_image_path = tmp_path / "page-2.png"
+    pdf_path.write_bytes(b"%PDF fake")
+    first_image_path.write_bytes(b"image")
+    second_image_path.write_bytes(b"image")
+    progress: list[tuple[int, int]] = []
+
+    class FakeRenderer:
+        def render(self, file_path: Path, output_dir: Path, dpi: int):
+            return [first_image_path, second_image_path]
+
+    class FakeOcrProvider:
+        def recognize_page(self, image_path: Path) -> list[ParsedBlock]:
+            return []
+
+    parser = DocumentParser(
+        ocr_provider=FakeOcrProvider(),
+        pdf_renderer=FakeRenderer(),
+        preprocess_images=False,
+    )
+
+    parser.extract_text(
+        pdf_path,
+        file_type="contract",
+        progress_callback=lambda current, total: progress.append((current, total)),
+    )
+
+    assert progress == [(1, 2), (2, 2)]

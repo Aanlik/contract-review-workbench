@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -91,6 +93,35 @@ def test_upload_contract_returns_ocr_failed_when_parser_crashes(db_session, monk
     assert body["file_name"] == "contract.png"
     assert body["parse_status"] == "ocr_failed"
     assert body["parse_method"] == "ocr"
+
+
+def test_retry_ocr_endpoint_queues_failed_file(db_session, monkeypatch):
+    case = ReviewCase(title="OCR 重试测试")
+    db_session.add(case)
+    db_session.flush()
+    uploaded = UploadedFile(
+        case_id=case.id,
+        file_type="contract",
+        file_name="failed-contract.pdf",
+        original_path="/tmp/failed-contract.pdf",
+        parse_method="ocr",
+        parse_status="ocr_failed",
+    )
+    db_session.add(uploaded)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.file_ingest_service.task_queue.submit",
+        lambda *args, **kwargs: SimpleNamespace(task_id="task-ocr-retry"),
+    )
+    client = make_client(db_session)
+
+    response = client.post(f"/api/cases/{case.id}/files/{uploaded.id}/retry-ocr")
+
+    assert response.status_code == 202
+    assert response.json() == {"task_id": "task-ocr-retry", "file_id": uploaded.id}
+    db_session.refresh(uploaded)
+    assert uploaded.parse_status == "processing"
 
 
 def test_upload_text_flow_file_is_parsed_immediately(db_session):

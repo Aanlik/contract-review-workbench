@@ -18,7 +18,7 @@ const ACTION_LABELS: Record<string, string> = {
   create_manual_issue: "人工标记",
   batch_update: "批量更新",
   batch_delete: "批量删除",
-  apply_ai_message: "应用AI建议",
+  apply_ai_message: "应用智能建议",
 };
 
 const ACTION_CLASSES: Record<string, string> = {
@@ -59,7 +59,7 @@ export function AuditLogPage() {
     <section className="audit-page">
       <header className="page-header">
         <div>
-          <p className="section-kicker">Operation Trail</p>
+          <p className="section-kicker">操作记录</p>
           <h1>审计日志</h1>
         </div>
         <div className="page-actions">

@@ -34,7 +34,7 @@ export function AppShell({ activePage, onNavigate, children }: AppShellProps) {
     <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-head">
-          {!collapsed && <div className="brand">合同 AI 审查</div>}
+          {!collapsed && <div className="brand">合同智能审查</div>}
           <div style={{ display: "flex", gap: 4 }}>
             <button
               className="theme-toggle"

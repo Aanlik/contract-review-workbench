@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { diffVersions, listCaseVersions } from "../api/client";
 import type { ReviewVersion, VersionDiffItem } from "../api/types";
+import { labelOf, riskLabels } from "../ui/labels";
 
 type VersionComparisonProps = {
   caseId: number;
@@ -12,12 +13,6 @@ const riskColors: Record<string, string> = {
   medium: "#ff9800",
   low: "#2196f3",
   info: "#6c757d",
-};
-
-const changeTypeLabels: Record<string, string> = {
-  added: "新增",
-  removed: "移除",
-  modified: "变更",
 };
 
 const changeTypeColors: Record<string, string> = {
@@ -119,16 +114,16 @@ export function VersionComparison({ caseId }: VersionComparisonProps) {
                   className="change-badge"
                   style={{ background: changeTypeColors[change.changeType] ?? "#ccc" }}
                 >
-                  {changeTypeLabels[change.changeType] ?? change.changeType}
+                    {change.changeType === "added" ? "新增" : change.changeType === "removed" ? "移除" : "变更"}
                 </span>
                 <strong>{change.title}</strong>
                 <span
                   className="risk-badge"
                   style={{ color: riskColors[change.riskLevel] ?? "#888" }}
                 >
-                  {change.riskLevel}
-                  {change.oldRiskLevel && change.oldRiskLevel !== change.riskLevel && (
-                    <span className="old-risk"> (原: {change.oldRiskLevel})</span>
+                    {labelOf(riskLabels, change.riskLevel)}
+                    {change.oldRiskLevel && change.oldRiskLevel !== change.riskLevel && (
+                      <span className="old-risk">（原：{labelOf(riskLabels, change.oldRiskLevel)}）</span>
                   )}
                 </span>
               </div>

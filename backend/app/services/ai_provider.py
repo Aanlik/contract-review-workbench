@@ -17,24 +17,44 @@ class OpenAICompatibleProvider:
     def chat(self, messages: list[ChatMessage], *, max_retries: int = 3) -> str:
         url = f"{self.settings.base_url.rstrip('/')}/chat/completions"
         headers = self._headers()
-        payload = {
-            "model": self.settings.model,
-            "messages": messages,
-            "temperature": self.settings.temperature,
-        }
         last_exc: Exception | None = None
-        for attempt in range(max_retries):
-            try:
-                with httpx.Client(timeout=self.settings.timeout_seconds) as client:
-                    response = client.post(url, headers=headers, json=payload)
-                    response.raise_for_status()
-                    data = response.json()
-                return data["choices"][0]["message"]["content"]
-            except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
-                last_exc = exc
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(min(2 ** attempt, 8))
+        for structured_output in (True, False):
+            payload = {
+                "model": self.settings.model,
+                "messages": messages,
+                "temperature": self.settings.temperature,
+                "max_tokens": 8192,
+            }
+            if structured_output:
+                payload["response_format"] = {"type": "json_object"}
+
+            for attempt in range(max_retries):
+                try:
+                    with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+                        response = client.post(url, headers=headers, json=payload)
+                        response.raise_for_status()
+                        data = response.json()
+                    content = data["choices"][0]["message"].get("content")
+                    if not content:
+                        raise ValueError("模型未返回可解析的审查内容")
+                    return content
+                except (
+                    httpx.HTTPStatusError,
+                    httpx.ConnectError,
+                    httpx.ReadTimeout,
+                    httpx.WriteTimeout,
+                ) as exc:
+                    last_exc = exc
+                    if (
+                        structured_output
+                        and isinstance(exc, httpx.HTTPStatusError)
+                        and exc.response.status_code == 400
+                    ):
+                        break
+                    if attempt < max_retries - 1:
+                        import time
+
+                        time.sleep(min(2**attempt, 8))
         raise last_exc  # type: ignore[misc]
 
     def _headers(self) -> dict[str, str]:
@@ -46,6 +66,8 @@ def build_contract_review_prompt(contract_text: str, focus: str | None = None) -
     system = (
         "你是一名专业律师，负责审查中文商务合同。"
         "你的结论必须审慎、可追溯，并提醒需要人工复核的不确定事项。"
+        "本次只审查合同正文条款，不审查 OA 签批、法审签报、事项签报或会议纪要是否上传；"
+        "流程材料由独立的流程合规审计模块处理。"
     )
     user = f"""
 请基于以下审核重点审查合同：{focus_text}

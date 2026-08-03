@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { Issue } from "../api/types";
+import { labelOf, localizeUiText, riskLabels, sourceLabels, statusLabels } from "../ui/labels";
 
 type IssueListProps = {
   issues: Issue[];
@@ -180,15 +181,16 @@ export function IssueList({
             )}
             <button
               className="issue-item-btn"
+              data-testid={`issue-item-${issue.id}`}
               onClick={() => onSelect(issue.id)}
               type="button"
             >
-              <strong>{issue.title}</strong>
+              <strong>{localizeUiText(issue.title)}</strong>
               <span className="risk-tag" style={{ color: riskColors[issue.riskLevel] ?? "#888" }}>
-                {issue.riskLevel}
+                {labelOf(riskLabels, issue.riskLevel)}
               </span>
-              <span className="source-tag">{issue.source}</span>
-              <span className="status-tag">{issue.status}</span>
+              <span className="source-tag">{labelOf(sourceLabels, issue.source)}</span>
+              <span className="status-tag">{labelOf(statusLabels, issue.status)}</span>
             </button>
           </div>
         ))}

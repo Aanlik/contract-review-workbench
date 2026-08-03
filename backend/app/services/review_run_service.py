@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from sqlalchemy import func, select
+import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.crypto import decrypt_api_key
 from app.models.review import (
     AppSetting,
     DocumentPage,
@@ -141,11 +143,8 @@ class ReviewRunService:
                 )
             )
 
-        review_case.issue_count = (
-            self.session.scalar(select(func.count(Issue.id)).where(Issue.case_id == case_id))
-            or len(created)
-        )
-        review_case.highest_risk_level = self._highest_risk(case_id)
+        review_case.issue_count = len(created)
+        review_case.highest_risk_level = self._highest_risk(case_id, review_case.current_version)
         review_case.status = "completed"
         self.session.commit()
         self.session.refresh(review_case)
@@ -232,14 +231,13 @@ class ReviewRunService:
         contract_sign_date = self._extract_date(contract_text, ["签订日期", "签署日期", "签约日期", "签字日期"])
         contract_effective_date = self._extract_date(contract_text, ["生效日期", "生效时间", "合同生效"])
 
-        approval_text = "\n".join(block.text for m in approval_materials for block in m.blocks)
+        approval_labels = ["签批日期", "审批日期", "批准日期", "签报日期", "最终审批", "审批通过"]
         legal_review_date = self._extract_date(
             "\n".join(block.text for m in legal_materials for block in m.blocks),
             ["法审日期", "法审时间", "法律审查", "法务审查日期", "法审完成", "法务审核"],
         )
-        approval_date = self._extract_date(
-            approval_text, ["签批日期", "审批日期", "批准日期", "签报日期", "最终审批", "审批通过"]
-        )
+        approval_hit = self._extract_approval_date_hit(approval_materials, approval_labels)
+        approval_date = approval_hit.value if approval_hit else None
 
         reference_date = contract_sign_date or contract_effective_date
         contract_date_hit = self._extract_date_hit(
@@ -271,10 +269,6 @@ class ReviewRunService:
             )
 
         if reference_date and approval_date and approval_date > reference_date:
-            approval_hit = self._extract_date_hit(
-                approval_materials,
-                ["签批日期", "审批日期", "批准日期", "签报日期", "最终审批", "审批通过"],
-            )
             created.append(
                 self._create_issue(
                     review_case,
@@ -382,15 +376,18 @@ class ReviewRunService:
         try:
             provider = OpenAICompatibleProvider(ai_settings)
             response_text = provider.chat(build_matter_consistency_prompt(contract_text, matter_text, instruction))
-            payload = json.loads(response_text)
-        except Exception:
+            payload = self._parse_ai_json_response(response_text)
+        except Exception as exc:
             return [
                 self._create_issue(
                     review_case,
                     issue_type="process_audit",
                     title="事项材料与合同内容范围一致性复核失败",
                     risk_level="info",
-                    description="系统未能完成事项签报/会议纪要与合同正文的 AI 一致性比对。",
+                    description=(
+                        "系统未能完成事项签报/会议纪要与合同正文的 AI 一致性比对。"
+                        f"{self._describe_ai_failure(exc)}"
+                    ),
                     suggestion="请检查 AI 接口配置后重新审核，或由法务人工核对审批事项与合同内容、范围。",
                     evidence_text=None,
                 )
@@ -487,15 +484,18 @@ class ReviewRunService:
         provider = OpenAICompatibleProvider(ai_settings)
         try:
             response_text = provider.chat(build_contract_review_prompt(contract_text, instruction))
-            payload = json.loads(response_text)
-        except Exception:
+            payload = self._parse_ai_json_response(response_text)
+        except Exception as exc:
             return [
                 self._create_issue(
                     review_case,
                     issue_type="contract_risk",
                     title="AI 合同审查调用失败",
                     risk_level="info",
-                    description="系统未能完成第三方 AI 合同审查，可能是接口配置、网络或模型返回格式异常。",
+                    description=(
+                        "系统未能完成第三方 AI 合同审查。"
+                        f"{self._describe_ai_failure(exc)}"
+                    ),
                     suggestion="请检查 AI Base URL、API Key、模型名，并重新审核。",
                     evidence_text=None,
                 )
@@ -521,9 +521,35 @@ class ReviewRunService:
         if setting is None:
             return None
         try:
-            return AiSettings(**setting.value)
+            values = dict(setting.value)
+            values["api_key"] = decrypt_api_key(values.get("api_key", ""))
+            return AiSettings(**values)
         except Exception:
             return None
+
+    def _parse_ai_json_response(self, response_text: str) -> dict:
+        cleaned = response_text.strip()
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            cleaned = cleaned[start : end + 1]
+        payload = json.loads(cleaned)
+        if not isinstance(payload, dict):
+            raise ValueError("智能审查响应必须是 JSON 对象")
+        return payload
+
+    def _describe_ai_failure(self, error: Exception) -> str:
+        if isinstance(error, httpx.ReadTimeout):
+            return "模型响应超时，请增加智能审查接口的超时时间后重试。"
+        if isinstance(error, httpx.HTTPStatusError):
+            return f"接口返回 HTTP {error.response.status_code}，请检查接口地址、密钥和模型名称。"
+        if isinstance(error, json.JSONDecodeError):
+            return "模型返回内容不是有效 JSON，请检查模型是否支持结构化输出。"
+        if isinstance(error, ValueError):
+            return "模型未返回可解析的审查内容，请检查模型是否支持结构化输出或提高输出上限。"
+        return "可能是接口配置、网络或模型返回格式异常。"
 
     def _extract_date_hit(self, materials: list[MaterialText], labels: list[str]) -> DateHit | None:
         for material in materials:
@@ -533,6 +559,26 @@ class ReviewRunService:
                     return hit
         return self._extract_date_from_text("\n".join(material.text for material in materials), labels, None)
 
+    def _extract_approval_date_hit(self, materials: list[MaterialText], labels: list[str]) -> DateHit | None:
+        labeled_hit = self._extract_date_hit(materials, labels)
+        if labeled_hit:
+            return labeled_hit
+
+        candidates: list[DateHit] = []
+        for material in materials:
+            for block in material.blocks or [MaterialBlock(text=material.text)]:
+                for line in block.text.splitlines():
+                    if not re.search(r"批准|审批通过|同意|签批", line):
+                        continue
+                    hit = self._extract_date_from_text(
+                        line,
+                        [""],
+                        block,
+                    )
+                    if hit:
+                        candidates.append(hit)
+        return max(candidates, key=lambda candidate: candidate.value) if candidates else None
+
     def _extract_date_from_text(
         self,
         text: str,
@@ -540,7 +586,8 @@ class ReviewRunService:
         source: MaterialBlock | None,
     ) -> DateHit | None:
         for label in labels:
-            match = re.search(rf"{label}[^\d]*?(\d{{4}})[年/-](\d{{1,2}})[月/-](\d{{1,2}})", text)
+            prefix = rf"{label}[^\d]*?" if label else r"[^\d]*?"
+            match = re.search(rf"{prefix}(\d{{4}})[年/-](\d{{1,2}})[月/-](\d{{1,2}})", text)
             if match:
                 year, month, day = map(int, match.groups())
                 try:
@@ -612,10 +659,13 @@ class ReviewRunService:
         normalized = risk_level.strip().lower()
         return normalized if normalized in {"high", "medium", "low", "info"} else "info"
 
-    def _highest_risk(self, case_id: int) -> str | None:
+    def _highest_risk(self, case_id: int, review_version: int | None = None) -> str | None:
+        filters = [Issue.case_id == case_id]
+        if review_version is not None:
+            filters.append(Issue.review_version == review_version)
         levels = [
             issue.risk_level
-            for issue in self.session.scalars(select(Issue).where(Issue.case_id == case_id)).all()
+            for issue in self.session.scalars(select(Issue).where(*filters)).all()
         ]
         for level in ["high", "medium", "low", "info"]:
             if level in levels:

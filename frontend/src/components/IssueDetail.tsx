@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { Issue, IssueUpdatePayload } from "../api/types";
+import { localizeUiText, riskLabels, statusLabels } from "../ui/labels";
 
 type IssueDetailProps = {
   issue?: Issue;
@@ -15,11 +16,11 @@ export function IssueDetail({ issue, onSave, onReanalyze }: IssueDetailProps) {
     setDraft(
       issue
         ? {
-            title: issue.title,
+            title: localizeUiText(issue.title),
             riskLevel: issue.riskLevel as IssueUpdatePayload["riskLevel"],
             status: issue.status as IssueUpdatePayload["status"],
-            description: issue.description ?? "",
-            suggestion: issue.suggestion ?? "",
+            description: localizeUiText(issue.description ?? ""),
+            suggestion: localizeUiText(issue.suggestion ?? ""),
           }
         : {},
     );
@@ -52,10 +53,9 @@ export function IssueDetail({ issue, onSave, onReanalyze }: IssueDetailProps) {
           }
           value={draft.riskLevel ?? issue.riskLevel}
         >
-          <option value="high">high</option>
-          <option value="medium">medium</option>
-          <option value="low">low</option>
-          <option value="info">info</option>
+          {Object.entries(riskLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
         </select>
       </label>
       <label>
@@ -69,11 +69,11 @@ export function IssueDetail({ issue, onSave, onReanalyze }: IssueDetailProps) {
           }
           value={draft.status ?? issue.status}
         >
-          <option value="pending">pending</option>
-          <option value="confirmed">confirmed</option>
-          <option value="modified">modified</option>
-          <option value="rejected">rejected</option>
-          <option value="needs_review">needs_review</option>
+          {Object.entries(statusLabels)
+            .filter(([value]) => ["pending", "confirmed", "modified", "rejected", "needs_review"].includes(value))
+            .map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
         </select>
       </label>
       <label>

@@ -161,6 +161,11 @@ export type OcrInstallResponse = {
   message: string;
 };
 
+export type OcrRetryResponse = {
+  taskId: string;
+  fileId: number;
+};
+
 export type VersionDiffItem = {
   issueId: number;
   title: string;

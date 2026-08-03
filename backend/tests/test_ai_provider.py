@@ -13,6 +13,7 @@ def test_contract_review_prompt_requires_structured_json():
     assert "JSON" in joined
     assert "风险等级" in joined
     assert "甲方不得解除合同" in joined
+    assert "不审查 OA 签批" in joined
 
 
 def test_matter_consistency_prompt_contains_both_materials():
@@ -65,3 +66,5 @@ def test_provider_uses_bearer_auth_header(monkeypatch):
     assert provider.chat([{"role": "user", "content": "hello"}]) == "ok"
     assert captured["url"] == "https://api.example.com/v1/chat/completions"
     assert captured["headers"]["Authorization"] == "Bearer sk-test-key"
+    assert captured["json"]["max_tokens"] == 8192
+    assert captured["json"]["response_format"] == {"type": "json_object"}

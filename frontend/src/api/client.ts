@@ -10,6 +10,7 @@ import type {
   ManualIssuePayload,
   OcrInstallResponse,
   OcrInstallTarget,
+  OcrRetryResponse,
   OcrRuntimeStatus,
   ReviewCase,
   ReviewVersion,
@@ -230,6 +231,16 @@ export async function listCaseDocuments(caseId: number): Promise<CaseDocument[]>
   const response = await fetch(`${API_BASE}/cases/${caseId}/documents`);
   const data = await parseJsonResponse(response);
   return data.map(fromSnakeCaseDocument);
+}
+
+export function documentPageImageUrl(caseId: number, fileId: number, pageNumber: number): string {
+  return `${API_BASE}/cases/${caseId}/documents/${fileId}/pages/${pageNumber}/image`;
+}
+
+export async function retryOcr(caseId: number, fileId: number): Promise<OcrRetryResponse> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/files/${fileId}/retry-ocr`, { method: "POST" });
+  const data = await parseJsonResponse(response);
+  return { taskId: data.task_id, fileId: data.file_id };
 }
 
 // Issues
