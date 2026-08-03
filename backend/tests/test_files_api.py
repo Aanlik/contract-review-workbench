@@ -1,8 +1,9 @@
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.core.database import get_session
 from app.main import create_app
-from app.models.review import AppSetting
+from app.models.review import AppSetting, DocumentPage, ReviewCase, UploadedFile
 from app.services.document_parser import ParsedBlock
 
 
@@ -157,3 +158,70 @@ def test_list_case_documents_returns_pages_and_blocks(db_session):
     assert documents[0]["file_name"] == "contract.txt"
     assert documents[0]["pages"][0]["page_number"] == 1
     assert documents[0]["pages"][0]["blocks"][0]["text"] == "合同签订日期：2026年7月18日"
+
+
+def test_page_image_endpoint_generates_legacy_image_and_checks_case_ownership(db_session, tmp_path, monkeypatch):
+    storage_root = tmp_path / "storage"
+    monkeypatch.setattr("app.services.page_image_service.settings.storage_root", storage_root)
+    source = tmp_path / "legacy.png"
+    Image.new("RGB", (120, 80), "white").save(source)
+
+    case = ReviewCase(title="页面图片接口")
+    other_case = ReviewCase(title="其他案例")
+    db_session.add_all([case, other_case])
+    db_session.flush()
+    uploaded = UploadedFile(
+        case_id=case.id,
+        file_type="contract",
+        file_name=source.name,
+        original_path=str(source),
+        parse_status="parsed",
+    )
+    db_session.add(uploaded)
+    db_session.flush()
+    db_session.add(DocumentPage(file_id=uploaded.id, page_number=1, ocr_status="completed"))
+    db_session.commit()
+
+    client = make_client(db_session)
+    response = client.get(f"/api/cases/{case.id}/documents/{uploaded.id}/pages/1/image")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/png")
+    assert response.content
+    page = db_session.query(DocumentPage).filter_by(file_id=uploaded.id, page_number=1).one()
+    assert page.image_path == f"cases/{case.id}/pages/{uploaded.id}/page-0001.png"
+
+    forbidden = client.get(f"/api/cases/{other_case.id}/documents/{uploaded.id}/pages/1/image")
+    assert forbidden.status_code == 404
+
+
+def test_page_image_endpoint_rejects_path_traversal(db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.page_image_service.settings.storage_root", tmp_path / "storage")
+    source = tmp_path / "source.png"
+    Image.new("RGB", (100, 60), "white").save(source)
+    case = ReviewCase(title="路径安全")
+    db_session.add(case)
+    db_session.flush()
+    uploaded = UploadedFile(
+        case_id=case.id,
+        file_type="contract",
+        file_name=source.name,
+        original_path=str(source),
+        parse_status="parsed",
+    )
+    db_session.add(uploaded)
+    db_session.flush()
+    db_session.add(
+        DocumentPage(
+            file_id=uploaded.id,
+            page_number=1,
+            image_path="../../outside.png",
+            ocr_status="completed",
+        )
+    )
+    db_session.commit()
+
+    client = make_client(db_session)
+    response = client.get(f"/api/cases/{case.id}/documents/{uploaded.id}/pages/1/image")
+
+    assert response.status_code == 404
