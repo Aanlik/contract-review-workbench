@@ -130,7 +130,12 @@ def test_paddleocr_provider_supports_v3_predict_results(tmp_path, monkeypatch):
     blocks = PaddleOcrProvider().recognize_page(sample)
 
     assert captured == {
-        "init": {"lang": "ch", "use_textline_orientation": True},
+        "init": {
+            "lang": "ch",
+            "use_textline_orientation": True,
+            "device": "cpu",
+            "engine_config": {"run_mode": "paddle"},
+        },
         "image_path": str(sample),
     }
     assert blocks == [

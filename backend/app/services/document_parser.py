@@ -66,7 +66,12 @@ class PaddleOcrProvider:
         return blocks
 
     def _recognize_with_v3(self, paddle_ocr, image_path: Path) -> list[ParsedBlock]:
-        engine = paddle_ocr(lang="ch", use_textline_orientation=True)
+        engine = paddle_ocr(
+            lang="ch",
+            use_textline_orientation=True,
+            device="cpu",
+            engine_config={"run_mode": "paddle"},
+        )
         results = engine.predict(str(image_path))
         if isinstance(results, dict) or hasattr(results, "to_dict"):
             results = [results]
