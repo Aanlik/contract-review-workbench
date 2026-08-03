@@ -16,6 +16,20 @@ const riskColors: Record<string, string> = {
   info: "#6c757d",
 };
 
+const materialTypeLabels: Record<string, string> = {
+  contract: "合同扫描件",
+  legal_review_report: "法审签报",
+  contract_approval: "合同签批文件",
+  matter_report: "事项签报 / 会议纪要",
+  sign_report: "历史签报",
+  meeting_minutes: "历史会议纪要",
+  approval: "历史审批材料",
+};
+
+function materialTypeLabel(fileType: string): string {
+  return materialTypeLabels[fileType] ?? fileType;
+}
+
 function ConfidenceBadge({ confidence }: { confidence: number | null }) {
   if (confidence === null || confidence === undefined) return null;
   const percent = Math.round(confidence * 100);
@@ -169,7 +183,7 @@ export function EvidenceViewer({ documents, files, issue, onCreateManualIssue }:
           files.map((file) => (
             <div className="material-row" key={file.id}>
               <strong>{file.fileName}</strong>
-              <span className="material-type">{file.fileType}</span>
+              <span className="material-type">{materialTypeLabel(file.fileType)}</span>
               <span className={`parse-status status-${file.parseStatus}`}>{file.parseStatus}</span>
             </div>
           ))
@@ -244,7 +258,7 @@ export function EvidenceViewer({ documents, files, issue, onCreateManualIssue }:
           documents.map((document) => (
             <details className="document-text" key={document.id} open={document.fileType === "contract"}>
               <summary>
-                {document.fileName} · {document.fileType} · {document.parseStatus}
+                {document.fileName} · {materialTypeLabel(document.fileType)} · {document.parseStatus}
               </summary>
               {document.pages.length ? (
                 document.pages.map((page) => (

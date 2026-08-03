@@ -1,5 +1,9 @@
 from app.schemas.settings import AiSettings
-from app.services.ai_provider import OpenAICompatibleProvider, build_contract_review_prompt
+from app.services.ai_provider import (
+    OpenAICompatibleProvider,
+    build_contract_review_prompt,
+    build_matter_consistency_prompt,
+)
 
 
 def test_contract_review_prompt_requires_structured_json():
@@ -9,6 +13,18 @@ def test_contract_review_prompt_requires_structured_json():
     assert "JSON" in joined
     assert "风险等级" in joined
     assert "甲方不得解除合同" in joined
+
+
+def test_matter_consistency_prompt_contains_both_materials():
+    messages = build_matter_consistency_prompt(
+        "合同名称：服务器采购\n合同范围：供货并安装",
+        "事项签报：同意采购服务器，范围为设备供货",
+    )
+    joined = "\n".join(message["content"] for message in messages)
+    assert "合同正文" in joined
+    assert "事项签报或会议纪要" in joined
+    assert "内容和范围" in joined
+    assert "服务器采购" in joined
 
 
 def test_provider_uses_bearer_auth_header(monkeypatch):

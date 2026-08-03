@@ -186,6 +186,129 @@ def test_reanalyze_flags_missing_legal_review_and_final_approval(db_session, tmp
     assert "未识别到最终审批通过记录" in titles
 
 
+def test_reanalyze_separates_legal_review_and_contract_approval_materials(db_session, tmp_path):
+    review_case = ReviewCase(title="分离流程材料审核")
+    db_session.add(review_case)
+    db_session.commit()
+    db_session.refresh(review_case)
+
+    contract = tmp_path / "contract.txt"
+    contract.write_text("合同签订日期：2026年7月18日\n甲方盖章：有\n乙方盖章：有", encoding="utf-8")
+    legal_report = tmp_path / "legal-report.txt"
+    legal_report.write_text("法审签报\n法审完成：2026年7月17日\n审核意见：同意", encoding="utf-8")
+    contract_approval = tmp_path / "contract-approval.txt"
+    contract_approval.write_text("合同签批文件\n签批日期：2026年7月19日\n审批通过：同意", encoding="utf-8")
+    db_session.add_all(
+        [
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="contract",
+                file_name=contract.name,
+                original_path=str(contract),
+                parse_status="uploaded",
+            ),
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="legal_review_report",
+                file_name=legal_report.name,
+                original_path=str(legal_report),
+                parse_status="uploaded",
+            ),
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="contract_approval",
+                file_name=contract_approval.name,
+                original_path=str(contract_approval),
+                parse_status="uploaded",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    client = make_client(db_session)
+    response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "流程审计"})
+
+    assert response.status_code == 201
+    titles = {issue["title"] for issue in client.get(f"/api/cases/{review_case.id}/issues").json()}
+    assert "合同签订日期早于审批通过日期" in titles
+    assert "法审日期晚于合同签订日期" not in titles
+    assert "未识别到法务审核记录" not in titles
+    assert "未识别到最终审批通过记录" not in titles
+
+
+def test_reanalyze_uses_optional_matter_material_for_scope_consistency(db_session, tmp_path, monkeypatch):
+    review_case = ReviewCase(title="事项一致性审核")
+    db_session.add(review_case)
+    db_session.commit()
+    db_session.refresh(review_case)
+
+    contract = tmp_path / "contract.txt"
+    contract.write_text(
+        "合同名称：服务器采购\n合同范围：采购服务器并提供安装服务\n合同金额：100万元",
+        encoding="utf-8",
+    )
+    matter = tmp_path / "matter.txt"
+    matter.write_text(
+        "事项签报：同意采购服务器，范围为设备供货，金额80万元",
+        encoding="utf-8",
+    )
+    db_session.add_all(
+        [
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="contract",
+                file_name=contract.name,
+                original_path=str(contract),
+                parse_status="uploaded",
+            ),
+            UploadedFile(
+                case_id=review_case.id,
+                file_type="matter_report",
+                file_name=matter.name,
+                original_path=str(matter),
+                parse_status="uploaded",
+            ),
+            AppSetting(
+                key="ai",
+                value={
+                    "base_url": "https://api.example.com/v1",
+                    "api_key": "sk-test",
+                    "model": "law-model",
+                    "temperature": 0.1,
+                    "timeout_seconds": 45,
+                },
+            ),
+        ]
+    )
+    db_session.commit()
+
+    class FakeProvider:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def chat(self, messages):
+            joined = "\n".join(message["content"] for message in messages)
+            if "事项签报或会议纪要" not in joined:
+                return '{"issues":[]}'
+            assert "合同范围：采购服务器并提供安装服务" in joined
+            return (
+                '{"issues":[{"title":"审批事项与合同内容范围不一致",'
+                '"risk_level":"high","description":"审批事项仅同意供货，合同增加安装服务且金额不同。",'
+                '"original_text":"合同范围：采购服务器并提供安装服务",'
+                '"suggestion":"补充事项审批或修改合同范围和金额。"}]}'
+            )
+
+    monkeypatch.setattr("app.services.review_run_service.OpenAICompatibleProvider", FakeProvider)
+
+    client = make_client(db_session)
+    response = client.post(f"/api/cases/{review_case.id}/reanalyze", json={"instruction": "核对事项一致性"})
+
+    assert response.status_code == 201
+    issues = client.get(f"/api/cases/{review_case.id}/issues").json()
+    issue = next(issue for issue in issues if issue["title"] == "审批事项与合同内容范围不一致")
+    assert issue["issue_type"] == "process_audit"
+
+
 def test_reanalyze_uses_persisted_ocr_blocks_when_source_file_is_missing(db_session, tmp_path):
     review_case = ReviewCase(title="OCR 入库审核")
     db_session.add(review_case)

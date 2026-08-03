@@ -169,6 +169,18 @@ export async function deleteCase(caseId: number, deleteFiles = false): Promise<v
 // Files
 export type UploadProgressCallback = (percent: number) => void;
 
+function xhrErrorMessage(xhr: XMLHttpRequest, fallback: string): string {
+  try {
+    const payload = JSON.parse(xhr.responseText);
+    if (typeof payload?.detail === "string") {
+      return `${fallback}: ${payload.detail}`;
+    }
+  } catch {
+    // Keep the original status-only message when the server did not return JSON.
+  }
+  return fallback;
+}
+
 export function uploadCaseFile(
   caseId: number,
   fileType: string,
@@ -196,7 +208,7 @@ export function uploadCaseFile(
           reject(new Error("Invalid response"));
         }
       } else {
-        reject(new Error(`Upload failed: ${xhr.status}`));
+        reject(new Error(xhrErrorMessage(xhr, `Upload failed: ${xhr.status}`)));
       }
     });
 

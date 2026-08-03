@@ -27,12 +27,14 @@ class FileIngestService:
             parsed_pages = self.parser.extract_text(file_path, uploaded.file_type)
         except RuntimeError as exc:
             if "OCR" not in str(exc):
-                raise
+                return self._mark_ocr_failed(uploaded)
             uploaded.parse_method = "ocr"
             uploaded.parse_status = "needs_ocr"
             self.session.commit()
             self.session.refresh(uploaded)
             return uploaded
+        except Exception:
+            return self._mark_ocr_failed(uploaded)
 
         self._persist_pages(uploaded, parsed_pages)
         return uploaded
@@ -96,6 +98,13 @@ class FileIngestService:
 
         self.session.commit()
         self.session.refresh(uploaded)
+
+    def _mark_ocr_failed(self, uploaded: UploadedFile) -> UploadedFile:
+        uploaded.parse_method = "ocr"
+        uploaded.parse_status = "ocr_failed"
+        self.session.commit()
+        self.session.refresh(uploaded)
+        return uploaded
 
     def _system_settings(self) -> SystemSettings:
         setting = self.session.get(AppSetting, "system")

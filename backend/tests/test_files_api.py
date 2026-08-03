@@ -66,6 +66,32 @@ def test_upload_contract_uses_configured_rapidocr_engine(db_session, monkeypatch
     assert body["parse_method"] == "ocr"
 
 
+def test_upload_contract_returns_ocr_failed_when_parser_crashes(db_session, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.document_parser.PaddleOcrProvider.recognize_page",
+        lambda self, path: (_ for _ in ()).throw(ValueError("image decode failed")),
+    )
+    app = create_app()
+
+    def override_get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = override_get_session
+    client = TestClient(app, raise_server_exceptions=False)
+    case = client.post("/api/cases", json={"title": "OCR 异常上传测试"}).json()
+    response = client.post(
+        f"/api/cases/{case['id']}/files",
+        data={"file_type": "contract"},
+        files={"file": ("contract.png", b"fake image", "image/png")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["file_name"] == "contract.png"
+    assert body["parse_status"] == "ocr_failed"
+    assert body["parse_method"] == "ocr"
+
+
 def test_upload_text_flow_file_is_parsed_immediately(db_session):
     client = make_client(db_session)
     case = client.post("/api/cases", json={"title": "解析测试"}).json()
@@ -79,6 +105,24 @@ def test_upload_text_flow_file_is_parsed_immediately(db_session):
     assert body["parse_status"] == "parsed"
     assert body["parse_method"] == "text"
     assert body["page_count"] == 1
+
+
+def test_upload_accepts_split_process_material_types(db_session):
+    client = make_client(db_session)
+    case = client.post("/api/cases", json={"title": "分离流程材料上传"}).json()
+
+    for file_type, file_name in [
+        ("legal_review_report", "legal-report.txt"),
+        ("contract_approval", "contract-approval.txt"),
+        ("matter_report", "matter.txt"),
+    ]:
+        response = client.post(
+            f"/api/cases/{case['id']}/files",
+            data={"file_type": file_type},
+            files={"file": (file_name, "审批材料：2026年7月20日".encode(), "text/plain")},
+        )
+        assert response.status_code == 201
+        assert response.json()["file_type"] == file_type
 
 
 def test_list_case_files_returns_uploaded_materials(db_session):

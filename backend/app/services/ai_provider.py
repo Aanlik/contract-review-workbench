@@ -78,3 +78,50 @@ def build_contract_review_prompt(contract_text: str, focus: str | None = None) -
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
+
+
+def build_matter_consistency_prompt(
+    contract_text: str,
+    matter_text: str,
+    focus: str | None = None,
+) -> list[ChatMessage]:
+    focus_text = focus or "核对审批同意的事项与拟签订合同的主体、内容和范围、金额及履约边界"
+    system = (
+        "你是一名专业律师，负责审查中文商务合同的流程合规性。"
+        "你要把事项审批材料当作授权边界，把合同正文当作拟签署内容，谨慎识别超出审批范围的变化。"
+    )
+    user = f"""
+请基于以下审核重点，核对事项签报或会议纪要与合同正文是否一致：{focus_text}
+
+请只返回 JSON，不要返回 Markdown。JSON 结构必须为：
+{{
+  "issues": [
+    {{
+      "title": "问题标题",
+      "risk_level": "high|medium|low|info",
+      "description": "问题说明",
+      "original_text": "来自合同或事项材料的原文片段",
+      "suggestion": "修改或补充审批建议",
+      "replacement_clause": "可选替代条款",
+      "review_note": "法务审查提示",
+      "requires_human_review": true
+    }}
+  ]
+}}
+
+判断要求：
+- 重点比较审批同意事项与合同的主体、标的、服务内容、合同范围、金额、期限和付款边界。
+- 仅当存在实质差异、审批授权不足或无法确认时列出问题；一致时返回空 issues。
+- 原文片段必须来自下方材料，不能编造。
+- 不能仅因为材料是扫描件或表述简略就直接认定不一致，应提示人工复核。
+
+合同正文：
+{contract_text}
+
+事项签报或会议纪要：
+{matter_text}
+""".strip()
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]

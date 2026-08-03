@@ -22,8 +22,9 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
   const [title, setTitle] = useState(savedDraft?.title ?? "");
   const [note, setNote] = useState(savedDraft?.note ?? "");
   const [contract, setContract] = useState<File | null>(null);
-  const [signReport, setSignReport] = useState<File | null>(null);
-  const [meetingMinutes, setMeetingMinutes] = useState<File | null>(null);
+  const [legalReviewReport, setLegalReviewReport] = useState<File | null>(null);
+  const [contractApproval, setContractApproval] = useState<File | null>(null);
+  const [matterMaterial, setMatterMaterial] = useState<File | null>(null);
   const [status, setStatus] = useState("");
   const [activeStep, setActiveStep] = useState(savedDraft?.activeStep ?? -1);
   const [uploadProgress, setUploadProgress] = useState(savedDraft?.uploadProgress ?? 0);
@@ -52,7 +53,7 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
           currentStep: taskProg.currentStep,
           totalSteps: taskProg.totalSteps,
         } : savedDraft?.taskProgress,
-        fileNames: [contract?.name, signReport?.name, meetingMinutes?.name].filter(Boolean) as string[],
+        fileNames: [contract?.name, legalReviewReport?.name, contractApproval?.name, matterMaterial?.name].filter(Boolean) as string[],
         startedAt: savedDraft?.startedAt ?? new Date().toISOString(),
       },
     });
@@ -147,6 +148,8 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
     event.preventDefault();
     if (!title.trim()) { setStatus("请先填写合同名称。"); return; }
     if (!contract) { setStatus("请上传合同扫描件。"); return; }
+    if (!legalReviewReport) { setStatus("请上传法审签报 PDF。"); return; }
+    if (!contractApproval) { setStatus("请上传合同签批文件 PDF。"); return; }
     setIsSubmitting(true);
     setTaskProgress(null);
     try {
@@ -164,15 +167,18 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
       await uploadCaseFile(reviewCase.id, "contract", contract, onProgress);
       persistDraft(1, reviewCase.id);
 
-      if (signReport) {
-        setStatus(`正在上传签报: ${signReport.name}...`);
+      setStatus(`正在上传法审签报: ${legalReviewReport.name}...`);
+      setUploadProgress(0);
+      await uploadCaseFile(reviewCase.id, "legal_review_report", legalReviewReport, onProgress);
+
+      setStatus(`正在上传合同签批文件: ${contractApproval.name}...`);
+      setUploadProgress(0);
+      await uploadCaseFile(reviewCase.id, "contract_approval", contractApproval, onProgress);
+
+      if (matterMaterial) {
+        setStatus(`正在上传事项签报/会议纪要: ${matterMaterial.name}...`);
         setUploadProgress(0);
-        await uploadCaseFile(reviewCase.id, "sign_report", signReport, onProgress);
-      }
-      if (meetingMinutes) {
-        setStatus(`正在上传会议纪要: ${meetingMinutes.name}...`);
-        setUploadProgress(0);
-        await uploadCaseFile(reviewCase.id, "meeting_minutes", meetingMinutes, onProgress);
+        await uploadCaseFile(reviewCase.id, "matter_report", matterMaterial, onProgress);
       }
 
       setUploadProgress(100);
@@ -248,14 +254,22 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
           {contract && <span className="file-info">{contract.name} ({(contract.size / 1024 / 1024).toFixed(1)} MB)</span>}
         </label>
         <label>
-          OA 签报 PDF
-          <input accept=".pdf,.txt,.md" onChange={(event) => setSignReport(event.target.files?.[0] ?? null)} type="file" />
-          {signReport && <span className="file-info">{signReport.name}</span>}
+          法审签报 PDF <span className="required-mark">必传</span>
+          <input accept=".pdf,.txt,.md" onChange={(event) => setLegalReviewReport(event.target.files?.[0] ?? null)} required type="file" />
+          <small className="field-hint">用于核对法审完成日期是否早于合同签订日期。</small>
+          {legalReviewReport && <span className="file-info">{legalReviewReport.name}</span>}
         </label>
         <label>
-          会议纪要 PDF
-          <input accept=".pdf,.txt,.md" onChange={(event) => setMeetingMinutes(event.target.files?.[0] ?? null)} type="file" />
-          {meetingMinutes && <span className="file-info">{meetingMinutes.name}</span>}
+          合同签批文件 PDF <span className="required-mark">必传</span>
+          <input accept=".pdf,.txt,.md" onChange={(event) => setContractApproval(event.target.files?.[0] ?? null)} required type="file" />
+          <small className="field-hint">用于核对合同签订日期是否早于最终审批通过日期。</small>
+          {contractApproval && <span className="file-info">{contractApproval.name}</span>}
+        </label>
+        <label>
+          事项签报 / 会议纪要 PDF <span className="optional-mark">可选</span>
+          <input accept=".pdf,.txt,.md" onChange={(event) => setMatterMaterial(event.target.files?.[0] ?? null)} type="file" />
+          <small className="field-hint">用于核对审批同意的事项与合同内容、范围是否一致。</small>
+          {matterMaterial && <span className="file-info">{matterMaterial.name}</span>}
         </label>
 
         {isSubmitting && (

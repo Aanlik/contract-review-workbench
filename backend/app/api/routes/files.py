@@ -15,6 +15,9 @@ router = APIRouter()
 
 AllowedFileType = Literal[
     "contract",
+    "legal_review_report",
+    "contract_approval",
+    "matter_report",
     "sign_report",
     "meeting_minutes",
     "approval",
@@ -24,6 +27,9 @@ AllowedFileType = Literal[
 
 ALLOWED_FILE_TYPES = {
     "contract",
+    "legal_review_report",
+    "contract_approval",
+    "matter_report",
     "sign_report",
     "meeting_minutes",
     "approval",
