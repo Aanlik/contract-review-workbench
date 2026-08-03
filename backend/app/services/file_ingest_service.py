@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.review import AppSetting, DocumentPage, OcrBlock, UploadedFile
 from app.schemas.settings import SystemSettings
 from app.services.document_parser import DocumentParser, PaddleOcrProvider, RapidOcrProvider
+from app.services.page_image_service import PageImageService
 
 
 class FileIngestService:
@@ -16,6 +17,7 @@ class FileIngestService:
             ocr_dpi=system_settings.ocr_dpi,
             preprocess_images=system_settings.preprocess_images,
         )
+        self.ocr_dpi = system_settings.ocr_dpi
 
     def ingest(self, uploaded_file_id: int) -> UploadedFile:
         uploaded = self.session.get(UploadedFile, uploaded_file_id)
@@ -74,11 +76,19 @@ class FileIngestService:
         uploaded.page_count = len(parsed_pages)
         uploaded.parse_method = self._detect_parse_method(parsed_pages)
         uploaded.parse_status = "parsed" if parsed_pages else "empty"
+        try:
+            page_images = PageImageService().persist(uploaded, parsed_pages, self.ocr_dpi)
+        except Exception:
+            page_images = {}
 
         for parsed_page in parsed_pages:
+            image_info = page_images.get(parsed_page.page_number)
             page = DocumentPage(
                 file_id=uploaded.id,
                 page_number=parsed_page.page_number,
+                image_path=image_info.relative_path if image_info else None,
+                width=image_info.width if image_info else None,
+                height=image_info.height if image_info else None,
                 has_text_layer=any(block.source == "pdf_text" for block in parsed_page.blocks),
                 ocr_status="completed" if parsed_page.blocks else "empty",
             )
