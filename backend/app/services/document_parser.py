@@ -94,6 +94,7 @@ def _configure_bundled_paddle_models() -> None:
     """Point PaddleX at models shipped inside a frozen application."""
     if not getattr(sys, "frozen", False):
         return
+    os.environ.setdefault("FLAGS_use_mkldnn", "0")
     base_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
     model_dir = base_dir / "ocr-models"
     if model_dir.is_dir():

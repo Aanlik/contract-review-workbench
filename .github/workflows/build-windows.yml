@@ -48,6 +48,7 @@ jobs:
       - name: Download and verify Chinese OCR models
         env:
           PADDLE_PDX_CACHE_HOME: ${{ github.workspace }}\build\ocr-models
+          FLAGS_use_mkldnn: '0'
         run: |
           New-Item -ItemType Directory -Force -Path "$env:PADDLE_PDX_CACHE_HOME" | Out-Null
           New-Item -ItemType Directory -Force -Path "build\ocr-smoke" | Out-Null
