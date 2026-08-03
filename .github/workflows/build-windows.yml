@@ -93,12 +93,17 @@ jobs:
 
       - name: Verify bundled model cache
         run: |
-          if (-not (Test-Path "dist\contract-review\ocr-models")) {
+          $modelCache = @(
+            "dist\contract-review\ocr-models",
+            "dist\contract-review\_internal\ocr-models"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $modelCache) {
             throw "Bundled PaddleOCR model cache is missing from the distribution"
           }
-          if (-not (Get-ChildItem -Path "dist\contract-review\ocr-models" -Recurse -File)) {
+          if (-not (Get-ChildItem -Path $modelCache -Recurse -File)) {
             throw "Bundled PaddleOCR model cache is empty"
           }
+          Write-Host "Bundled OCR model cache: $modelCache"
 
       - name: Setup distribution
         run: |
