@@ -9,6 +9,7 @@ The resulting dist/contract-review/ folder is a portable distribution.
 
 from pathlib import Path
 from importlib.util import find_spec
+import os
 import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs
@@ -20,6 +21,9 @@ project_root = spec_dir.parent
 ocr_datas = []
 ocr_binaries = []
 ocr_hiddenimports = []
+bundled_model_cache = os.environ.get("CONTRACT_REVIEW_OCR_MODELS")
+if bundled_model_cache and Path(bundled_model_cache).is_dir():
+    ocr_datas.append((bundled_model_cache, "ocr-models"))
 
 for package in [
     'rapidocr',

@@ -6,6 +6,12 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  CONTRACT_REVIEW_OCR_MODELS: ${{ github.workspace }}\build\ocr-models
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -39,6 +45,32 @@ jobs:
           print("OCR imports OK:", ", ".join(packages))
           '@ | python
 
+      - name: Download and verify Chinese OCR models
+        env:
+          PADDLE_PDX_CACHE_HOME: ${{ github.workspace }}\build\ocr-models
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:PADDLE_PDX_CACHE_HOME" | Out-Null
+          New-Item -ItemType Directory -Force -Path "build\ocr-smoke" | Out-Null
+          @'
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+          from paddleocr import PaddleOCR
+
+          image_path = Path("build/ocr-smoke/sample.png")
+          image = Image.new("RGB", (640, 160), "white")
+          ImageDraw.Draw(image).text((24, 48), "合同签订日期 2026年8月3日", fill="black")
+          image.save(image_path)
+
+          engine = PaddleOCR(lang="ch", use_textline_orientation=True)
+          results = list(engine.predict(str(image_path)))
+          if not results or not results[0].get("rec_texts"):
+              raise SystemExit("PaddleOCR model smoke test returned no recognized text")
+          print("PaddleOCR model smoke test OK:", results[0]["rec_texts"])
+          '@ | python
+          if (-not (Get-ChildItem -Path "$env:PADDLE_PDX_CACHE_HOME" -Recurse -File)) {
+            throw "PaddleOCR model cache is empty"
+          }
+
       - name: Install frontend dependencies
         run: |
           cd frontend
@@ -52,6 +84,15 @@ jobs:
       - name: Build Windows executable
         run: |
           pyinstaller backend/contract_review.spec --clean --noconfirm
+
+      - name: Verify bundled model cache
+        run: |
+          if (-not (Test-Path "dist\contract-review\ocr-models")) {
+            throw "Bundled PaddleOCR model cache is missing from the distribution"
+          }
+          if (-not (Get-ChildItem -Path "dist\contract-review\ocr-models" -Recurse -File)) {
+            throw "Bundled PaddleOCR model cache is empty"
+          }
 
       - name: Setup distribution
         run: |
@@ -73,21 +114,53 @@ jobs:
           '@
           Set-Content -Path "dist\contract-review\start.bat" -Value $content
 
+      - name: Smoke test packaged application
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "dist\contract-review\contract-review.exe" `
+            -WorkingDirectory "${{ github.workspace }}\dist\contract-review" -PassThru
+          try {
+            $healthy = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $response = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/health" -UseBasicParsing
+                if ($response.StatusCode -eq 200) {
+                  $healthy = $true
+                  break
+                }
+              } catch { Start-Sleep -Seconds 2 }
+            }
+            if (-not $healthy) { throw "Packaged application health check failed" }
+            Write-Host "Packaged Windows application health check OK"
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+
       - name: Create ZIP archive
         run: |
           Compress-Archive -Path "dist\contract-review\*" -DestinationPath "contract-review-windows.zip"
+
+      - name: Create SHA256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "contract-review-windows.zip" -Algorithm SHA256).Hash
+          Set-Content -Path "contract-review-windows.zip.sha256" -Value $hash -Encoding ascii
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: contract-review-windows
-          path: contract-review-windows.zip
+          path: |
+            contract-review-windows.zip
+            contract-review-windows.zip.sha256
           retention-days: 30
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: contract-review-windows.zip
+          files: |
+            contract-review-windows.zip
+            contract-review-windows.zip.sha256
           draft: false
           prerelease: false
