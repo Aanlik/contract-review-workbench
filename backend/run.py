@@ -30,7 +30,7 @@ def _run_ocr_smoke_test(image_path: str, engine: str = "paddle") -> None:
     blocks = provider.recognize_page(Path(image_path))
     if not blocks:
         raise RuntimeError("OCR smoke test returned no text blocks")
-    print(f"OCR smoke test OK: {blocks[0].text}")
+    print(f"OCR smoke test OK: {len(blocks)} blocks")
 
 
 if __name__ == "__main__":
