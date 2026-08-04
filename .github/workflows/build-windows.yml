@@ -38,7 +38,7 @@ jobs:
         run: |
           @'
           import importlib.util
-          packages = ["rapidocr", "onnxruntime", "paddle", "paddleocr"]
+          packages = ["rapidocr", "onnxruntime", "paddle", "paddleocr", "paddlex"]
           missing = [name for name in packages if importlib.util.find_spec(name) is None]
           if missing:
               raise SystemExit(f"Missing OCR packages: {missing}")
