@@ -7,9 +7,13 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from typing import Literal, Protocol
 
 from PIL import Image, ImageFilter, ImageOps
+
+_paddle_model_cache_lock = RLock()
+_prepared_paddle_model_dirs: set[tuple[Path, Path]] = set()
 
 
 @dataclass(frozen=True)
@@ -114,7 +118,11 @@ def _configure_bundled_paddle_models() -> None:
     bundled_model_dir = base_dir / "ocr-models"
     if bundled_model_dir.is_dir():
         runtime_model_dir = _paddle_runtime_model_dir()
-        prepare_paddle_model_cache(bundled_model_dir, runtime_model_dir)
+        cache_key = (bundled_model_dir.resolve(), runtime_model_dir.resolve())
+        with _paddle_model_cache_lock:
+            if cache_key not in _prepared_paddle_model_dirs:
+                prepare_paddle_model_cache(bundled_model_dir, runtime_model_dir)
+                _prepared_paddle_model_dirs.add(cache_key)
         os.environ["PADDLE_PDX_CACHE_HOME"] = str(runtime_model_dir)
 
 

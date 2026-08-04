@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getTask } from "../api/client";
 import { NewCasePage } from "./NewCasePage";
 
 vi.mock("../api/client", () => ({
@@ -51,5 +52,40 @@ describe("NewCasePage", () => {
     expect(screen.getByText("已选择 4 份材料")).toBeTruthy();
     expect(screen.getByText("事项材料-1.pdf")).toBeTruthy();
     expect(screen.getByText("事项材料-4.pdf")).toBeTruthy();
+  });
+
+  it("automatically resumes a persisted task after returning to the page", async () => {
+    window.localStorage.setItem("contract-review-workbench.workspace", JSON.stringify({
+      filters: {},
+      newCaseDraft: {
+        title: "合同审核",
+        note: "",
+        caseId: 12,
+        activeStep: 3,
+        uploadProgress: 100,
+        taskProgress: { taskId: "task-12", progress: "正在审核", progressPercent: 60, currentStep: 3, totalSteps: 6 },
+        fileNames: ["合同.pdf"],
+        startedAt: "2026-08-04T00:00:00.000Z",
+      },
+    }));
+    vi.mocked(getTask).mockResolvedValue({
+      taskId: "task-12",
+      status: "completed",
+      result: null,
+      error: null,
+      progress: "审核完成",
+      progressPercent: 100,
+      currentStep: 6,
+      totalSteps: 6,
+      createdAt: "2026-08-04T00:00:00.000Z",
+      startedAt: "2026-08-04T00:00:01.000Z",
+      finishedAt: "2026-08-04T00:00:02.000Z",
+    });
+    const onCreated = vi.fn();
+
+    render(<NewCasePage onCreated={onCreated} />);
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(12));
+    expect(screen.getByText("审核任务已完成。")).toBeTruthy();
   });
 });

@@ -32,9 +32,12 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
   const [taskProgress, setTaskProgress] = useState<TaskStatus | null>(null);
   const [resumedCaseId, setResumedCaseId] = useState<number | undefined>(savedDraft?.caseId);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resumedTaskIdRef = useRef<string | null>(null);
 
-  // Offer resume if draft exists
-  const [showResume, setShowResume] = useState(!!savedDraft && savedDraft.activeStep >= 0);
+  // Only incomplete uploads need a manual resume action. Submitted tasks reconnect automatically.
+  const [showResume, setShowResume] = useState(
+    !!savedDraft && savedDraft.activeStep >= 0 && !savedDraft.taskProgress?.taskId,
+  );
 
   function persistDraft(step: number, caseId?: number, taskId?: string, taskProg?: TaskStatus) {
     const state = loadWorkspaceState();
@@ -162,6 +165,13 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
       setIsSubmitting(false);
     }
   }
+
+  useEffect(() => {
+    const taskId = savedDraft?.taskProgress?.taskId;
+    if (!taskId || resumedTaskIdRef.current === taskId) return;
+    resumedTaskIdRef.current = taskId;
+    void handleResume();
+  }, []);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

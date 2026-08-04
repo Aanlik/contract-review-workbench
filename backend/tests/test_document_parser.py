@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import app.services.document_parser as document_parser
 from app.services.document_parser import (
     DocumentParser,
     PaddleOcrProvider,
@@ -201,6 +202,27 @@ def test_prepare_paddle_model_cache_repairs_an_incomplete_runtime_copy(tmp_path)
     prepare_paddle_model_cache(bundled, runtime)
 
     assert runtime_model.read_text() == '{"program": "valid"}'
+
+
+def test_frozen_paddle_models_are_verified_once_per_process(tmp_path, monkeypatch):
+    bundled = tmp_path / "ocr-models"
+    bundled.mkdir()
+    runtime = tmp_path / "runtime-models"
+    calls: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.setattr(document_parser, "_paddle_runtime_model_dir", lambda: runtime)
+    monkeypatch.setattr(
+        document_parser,
+        "prepare_paddle_model_cache",
+        lambda source, target: calls.append((source, target)),
+    )
+    monkeypatch.setattr(document_parser, "_prepared_paddle_model_dirs", set())
+
+    document_parser._configure_bundled_paddle_models()
+    document_parser._configure_bundled_paddle_models()
+
+    assert calls == [(bundled, runtime)]
 
 
 def test_scanned_contract_pdf_is_rendered_to_page_images_before_ocr(tmp_path):
