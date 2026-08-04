@@ -1,3 +1,5 @@
+import hashlib
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +10,7 @@ from app.services.document_parser import (
     ParsedBlock,
     ParsedPage,
     RapidOcrProvider,
+    prepare_paddle_model_cache,
 )
 
 
@@ -173,30 +176,31 @@ def test_paddleocr_provider_reuses_v3_engine_between_pages(tmp_path, monkeypatch
     assert calls == {"initializations": 1, "predictions": 2}
 
 
-def test_paddleocr_provider_falls_back_to_rapidocr_for_model_config_error(tmp_path, monkeypatch):
-    sample = tmp_path / "contract.png"
-    sample.write_bytes(b"fake image")
-    expected = [
-        ParsedBlock(
-            text="甲方盖章",
-            bbox=[10, 20, 100, 40],
-            confidence=0.93,
-            source="ocr",
-            order_index=0,
-        )
-    ]
+def test_prepare_paddle_model_cache_repairs_an_incomplete_runtime_copy(tmp_path):
+    bundled = tmp_path / "bundled-models"
+    model_file = bundled / "official_models" / "PP-LCNet_x1_0_doc_ori" / "inference.json"
+    model_file.parent.mkdir(parents=True)
+    model_file.write_text('{"program": "valid"}', encoding="utf-8")
+    manifest = {
+        "files": [
+            {
+                "path": model_file.relative_to(bundled).as_posix(),
+                "size": model_file.stat().st_size,
+                "sha256": hashlib.sha256(model_file.read_bytes()).hexdigest(),
+            }
+        ]
+    }
+    (bundled / "model-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    runtime = tmp_path / "runtime-models"
 
-    class BrokenPaddleOCR:
-        def __init__(self, **_kwargs):
-            raise RuntimeError("[json.exception.parse_error.101] attempting to parse an empty input")
+    runtime_model = runtime / "official_models" / "PP-LCNet_x1_0_doc_ori" / "inference.json"
+    prepare_paddle_model_cache(bundled, runtime)
+    assert runtime_model.read_text() == '{"program": "valid"}'
 
-        def predict(self, _image_path):
-            return iter([])
+    runtime_model.write_text("", encoding="utf-8")
+    prepare_paddle_model_cache(bundled, runtime)
 
-    monkeypatch.setitem(sys.modules, "paddleocr", SimpleNamespace(PaddleOCR=BrokenPaddleOCR))
-    monkeypatch.setattr(RapidOcrProvider, "recognize_page", lambda _self, _path: expected)
-
-    assert PaddleOcrProvider().recognize_page(sample) == expected
+    assert runtime_model.read_text() == '{"program": "valid"}'
 
 
 def test_scanned_contract_pdf_is_rendered_to_page_images_before_ocr(tmp_path):

@@ -1,5 +1,7 @@
-import logging
+import hashlib
+import json
 import os
+import shutil
 import sys
 import tempfile
 from collections.abc import Callable
@@ -8,8 +10,6 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from PIL import Image, ImageFilter, ImageOps
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,33 +50,27 @@ class PaddleOcrProvider:
                 "PaddleOCR is not installed. Install the OCR extra before parsing scanned contracts."
             ) from exc
 
-        try:
-            if hasattr(PaddleOCR, "predict"):
-                return self._recognize_with_v3(PaddleOCR, image_path)
+        if hasattr(PaddleOCR, "predict"):
+            return self._recognize_with_v3(PaddleOCR, image_path)
 
-            engine = self._engine or PaddleOCR(use_angle_cls=True, lang="ch")
-            self._engine = engine
-            result = engine.ocr(str(image_path), cls=True)
-            rows = result[0] if result and isinstance(result[0], list) else result
-            blocks: list[ParsedBlock] = []
-            for order_index, row in enumerate(rows or []):
-                bbox, payload = row
-                text, confidence = payload
-                blocks.append(
-                    ParsedBlock(
-                        text=str(text),
-                        bbox=normalize_ocr_bbox(bbox),
-                        confidence=float(confidence),
-                        source="ocr",
-                        order_index=order_index,
-                    )
+        engine = self._engine or PaddleOCR(use_angle_cls=True, lang="ch")
+        self._engine = engine
+        result = engine.ocr(str(image_path), cls=True)
+        rows = result[0] if result and isinstance(result[0], list) else result
+        blocks: list[ParsedBlock] = []
+        for order_index, row in enumerate(rows or []):
+            bbox, payload = row
+            text, confidence = payload
+            blocks.append(
+                ParsedBlock(
+                    text=str(text),
+                    bbox=normalize_ocr_bbox(bbox),
+                    confidence=float(confidence),
+                    source="ocr",
+                    order_index=order_index,
                 )
-            return blocks
-        except RuntimeError as exc:
-            if not _is_paddle_model_configuration_error(exc):
-                raise
-            logger.warning("PaddleOCR model initialization failed; falling back to RapidOCR: %s", exc)
-            return RapidOcrProvider().recognize_page(image_path)
+            )
+        return blocks
 
     def _recognize_with_v3(self, paddle_ocr, image_path: Path) -> list[ParsedBlock]:
         engine = self._engine
@@ -112,19 +106,76 @@ class PaddleOcrProvider:
 
 
 def _configure_bundled_paddle_models() -> None:
-    """Point PaddleX at models shipped inside a frozen application."""
+    """Use a verified writable copy of models shipped with a frozen application."""
     if not getattr(sys, "frozen", False):
         return
     os.environ.setdefault("FLAGS_use_mkldnn", "0")
     base_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
-    model_dir = base_dir / "ocr-models"
-    if model_dir.is_dir():
-        os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(model_dir))
+    bundled_model_dir = base_dir / "ocr-models"
+    if bundled_model_dir.is_dir():
+        runtime_model_dir = _paddle_runtime_model_dir()
+        prepare_paddle_model_cache(bundled_model_dir, runtime_model_dir)
+        os.environ["PADDLE_PDX_CACHE_HOME"] = str(runtime_model_dir)
 
 
-def _is_paddle_model_configuration_error(error: RuntimeError) -> bool:
-    message = str(error)
-    return "json.exception.parse_error.101" in message or "attempting to parse an empty input" in message
+def _paddle_runtime_model_dir() -> Path:
+    if sys.platform == "win32":
+        root = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    elif sys.platform == "darwin":
+        root = Path.home() / "Library" / "Application Support"
+    else:
+        root = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    return root / "ContractReviewWorkbench" / "ocr-models"
+
+
+def prepare_paddle_model_cache(bundled_model_dir: Path, runtime_model_dir: Path) -> None:
+    """Validate model files and atomically restore a damaged runtime cache."""
+    manifest = _read_model_manifest(bundled_model_dir)
+    if not _model_cache_is_valid(bundled_model_dir, manifest):
+        raise RuntimeError("内置 PaddleOCR 模型文件不完整，请重新下载完整安装包。")
+    if _model_cache_is_valid(runtime_model_dir, manifest):
+        return
+
+    staging_dir = runtime_model_dir.with_name(f".{runtime_model_dir.name}-staging")
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(bundled_model_dir, staging_dir)
+    if runtime_model_dir.exists():
+        shutil.rmtree(runtime_model_dir)
+    staging_dir.replace(runtime_model_dir)
+
+
+def _read_model_manifest(model_dir: Path) -> list[dict[str, str | int]]:
+    manifest_path = model_dir / "model-manifest.json"
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        files = data["files"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise RuntimeError("内置 PaddleOCR 模型清单无效，请重新下载完整安装包。") from exc
+    if not isinstance(files, list) or not files:
+        raise RuntimeError("内置 PaddleOCR 模型清单为空，请重新下载完整安装包。")
+    return files
+
+
+def _model_cache_is_valid(model_dir: Path, manifest: list[dict[str, str | int]]) -> bool:
+    for entry in manifest:
+        relative_path = entry.get("path")
+        expected_size = entry.get("size")
+        expected_hash = entry.get("sha256")
+        if not (
+            isinstance(relative_path, str)
+            and isinstance(expected_size, int)
+            and isinstance(expected_hash, str)
+        ):
+            return False
+        candidate = model_dir / relative_path
+        if not candidate.is_file() or candidate.stat().st_size != expected_size:
+            return False
+        digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+        if digest != expected_hash:
+            return False
+    return True
 
 
 class RapidOcrProvider:

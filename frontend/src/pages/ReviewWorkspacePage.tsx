@@ -63,7 +63,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   const [exportFormat, setExportFormat] = useState<"markdown" | "docx" | "pdf">("markdown");
   const [exportScope, setExportScope] = useState<"final" | "all" | "high_and_medium" | "confirmed">("final");
   const [batchDeleteTarget, setBatchDeleteTarget] = useState<number[] | null>(null);
-  const [retryingFileId, setRetryingFileId] = useState<number | null>(null);
+  const [retryingFileIds, setRetryingFileIds] = useState<Set<number>>(() => new Set());
 
   const selectedIssue = useMemo(
     () => issues.find((issue) => issue.id === selectedIssueId),
@@ -177,7 +177,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
   }
 
   async function handleRetryOcr(fileId: number) {
-    setRetryingFileId(fileId);
+    setRetryingFileIds((current) => new Set(current).add(fileId));
     setStatus("正在提交扫描识别重试任务...");
     try {
       const { taskId } = await retryOcr(caseId, fileId);
@@ -206,7 +206,11 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
       await refreshDocuments();
       setStatus(error instanceof Error ? error.message : "扫描识别失败");
     } finally {
-      setRetryingFileId(null);
+      setRetryingFileIds((current) => {
+        const next = new Set(current);
+        next.delete(fileId);
+        return next;
+      });
     }
   }
 
@@ -324,7 +328,7 @@ export function ReviewWorkspacePage({ caseId, onCaseChanged }: ReviewWorkspacePa
               issue={selectedIssue}
               onCreateManualIssue={handleCreateManualIssue}
               onRetryOcr={handleRetryOcr}
-              retryingFileId={retryingFileId}
+              retryingFileIds={retryingFileIds}
             />
           </div>
           <div className="workspace-right">

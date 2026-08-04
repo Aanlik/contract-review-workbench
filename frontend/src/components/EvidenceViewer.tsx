@@ -11,7 +11,7 @@ type EvidenceViewerProps = {
   files: UploadedFile[];
   onCreateManualIssue: (payload: ManualIssuePayload) => void;
   onRetryOcr?: (fileId: number) => void;
-  retryingFileId?: number | null;
+  retryingFileIds?: Set<number>;
   focusRequest?: {
     issueId?: number;
     fileId?: number | null;
@@ -148,7 +148,7 @@ function EvidenceCard({ evidence }: { evidence: EvidenceRef }) {
   );
 }
 
-export function EvidenceViewer({ caseId, documents, files, issue, onCreateManualIssue, onRetryOcr, retryingFileId, focusRequest }: EvidenceViewerProps) {
+export function EvidenceViewer({ caseId, documents, files, issue, onCreateManualIssue, onRetryOcr, retryingFileIds, focusRequest }: EvidenceViewerProps) {
   const [evidenceText, setEvidenceText] = useState("");
   const [title, setTitle] = useState("人工新增问题");
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
@@ -306,7 +306,8 @@ export function EvidenceViewer({ caseId, documents, files, issue, onCreateManual
           materialFiles.map((file) => {
             const document = documents.find((item) => item.id === file.id);
             const parseStatus = document?.parseStatus ?? file.parseStatus;
-            const canRetry = onRetryOcr && ["ocr_failed", "needs_ocr"].includes(parseStatus);
+            const isRetrying = retryingFileIds?.has(file.id) ?? false;
+            const canRetry = onRetryOcr && (["ocr_failed", "needs_ocr"].includes(parseStatus) || isRetrying);
             return (
             <div className={`material-row${selectedDocument?.id === file.id ? " active" : ""}`} key={file.id}>
               <button
@@ -323,11 +324,11 @@ export function EvidenceViewer({ caseId, documents, files, issue, onCreateManual
               {canRetry && (
                 <button
                   className="material-retry"
-                  disabled={retryingFileId === file.id}
+                  disabled={isRetrying}
                   onClick={() => onRetryOcr(file.id)}
                   type="button"
                 >
-                  {retryingFileId === file.id ? "识别中..." : "重新识别"}
+                  {isRetrying ? "识别中..." : "重新识别"}
                 </button>
               )}
             </div>

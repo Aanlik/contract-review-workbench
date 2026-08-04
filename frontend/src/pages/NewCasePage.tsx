@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { createCase, getTask, listCases, reanalyzeAsync, uploadCaseFile, type UploadProgressCallback } from "../api/client";
 import type { TaskStatus } from "../api/types";
@@ -70,8 +70,9 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
     saveWorkspaceState(rest);
   }
 
-  function handleMatterMaterialsChange(fileList: FileList | null) {
-    const selected = Array.from(fileList ?? []);
+  function handleMatterMaterialsChange(event: ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
     setMatterMaterials((current) => {
       const existing = new Set(current.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
       const additions = selected.filter((file) => !existing.has(`${file.name}-${file.size}-${file.lastModified}`));
@@ -289,7 +290,7 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
               accept=".pdf,.txt,.md"
               aria-label="事项签报 / 会议纪要文件"
               multiple
-              onChange={(event) => handleMatterMaterialsChange(event.target.files)}
+              onChange={handleMatterMaterialsChange}
               type="file"
             />
             <small className="field-hint">用于核对审批同意的事项与合同内容、范围是否一致。</small>

@@ -288,4 +288,25 @@ describe("EvidenceViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新识别" }));
     expect(onRetryOcr).toHaveBeenCalledWith(3);
   });
+
+  it("keeps retry status visible for every OCR task in progress", () => {
+    render(
+      <EvidenceViewer
+        caseId={12}
+        documents={[
+          { id: 3, fileType: "contract", fileName: "合同.pdf", parseMethod: "ocr", parseStatus: "processing", pages: [] },
+          { id: 4, fileType: "matter_report", fileName: "事项签报.pdf", parseMethod: "ocr", parseStatus: "processing", pages: [] },
+        ]}
+        files={[
+          { id: 3, caseId: 12, fileType: "contract", fileName: "合同.pdf", parseStatus: "processing" },
+          { id: 4, caseId: 12, fileType: "matter_report", fileName: "事项签报.pdf", parseStatus: "processing" },
+        ]}
+        onCreateManualIssue={() => {}}
+        onRetryOcr={() => {}}
+        retryingFileIds={new Set([3, 4])}
+      />,
+    );
+
+    expect(screen.getAllByRole("button", { name: "识别中..." })).toHaveLength(2);
+  });
 });

@@ -76,6 +76,29 @@ jobs:
           if (-not (Get-ChildItem -Path "$env:PADDLE_PDX_CACHE_HOME" -Recurse -File)) {
             throw "PaddleOCR model cache is empty"
           }
+          @'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          cache_dir = Path(os.environ["PADDLE_PDX_CACHE_HOME"])
+          files = []
+          for path in sorted((cache_dir / "official_models").rglob("*")):
+              if not path.is_file() or ".cache" in path.parts:
+                  continue
+              files.append({
+                  "path": path.relative_to(cache_dir).as_posix(),
+                  "size": path.stat().st_size,
+                  "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+              })
+          if not files:
+              raise SystemExit("PaddleOCR model manifest is empty")
+          (cache_dir / "model-manifest.json").write_text(
+              json.dumps({"files": files}, ensure_ascii=True), encoding="utf-8"
+          )
+          print(f"PaddleOCR model manifest contains {len(files)} files")
+          '@ | python
 
       - name: Install frontend dependencies
         run: |
