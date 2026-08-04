@@ -136,6 +136,8 @@ def test_paddleocr_provider_supports_v3_predict_results(tmp_path, monkeypatch):
     assert captured == {
         "init": {
             "lang": "ch",
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
             "use_textline_orientation": True,
             "device": "cpu",
             "engine_config": {"run_mode": "paddle"},
@@ -305,4 +307,4 @@ def test_scanned_contract_reports_ocr_progress_for_each_page(tmp_path):
         progress_callback=lambda current, total: progress.append((current, total)),
     )
 
-    assert progress == [(1, 2), (2, 2)]
+    assert progress == [(0, 2), (1, 2), (2, 2)]

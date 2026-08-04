@@ -81,6 +81,10 @@ class PaddleOcrProvider:
         if engine is None:
             engine = paddle_ocr(
                 lang="ch",
+                # Exported PDFs are flat scans. The photo-specific orientation and
+                # dewarping pipelines consume substantial CPU without improving them.
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
                 use_textline_orientation=True,
                 device="cpu",
                 engine_config={"run_mode": "paddle"},
@@ -339,6 +343,8 @@ class DocumentParser:
                     raise RuntimeError(f"OCR PDF rendering failed: {exc}") from exc
                 pages: list[ParsedPage] = []
                 total_pages = len(image_paths)
+                if progress_callback:
+                    progress_callback(0, total_pages)
                 for page_number, image_path in enumerate(image_paths, start=1):
                     ocr_path = self.preprocessor.preprocess(image_path) if self.preprocess_images else image_path
                     pages.append(

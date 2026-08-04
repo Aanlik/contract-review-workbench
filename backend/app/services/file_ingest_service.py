@@ -16,9 +16,18 @@ def _run_ocr_retry(task_id: str, uploaded_file_id: int) -> dict:
 
     session = SessionLocal()
     try:
-        task_queue.update_progress(task_id, "正在准备扫描识别材料...", step=1, total=3, percent=5)
+        task_queue.update_progress(task_id, "正在将材料转换为高精度扫描图...", step=1, total=3, percent=5)
 
         def update_ocr_progress(current_page: int, total_pages: int) -> None:
+            if current_page == 0:
+                task_queue.update_progress(
+                    task_id,
+                    f"已生成 {total_pages} 页扫描图，正在初始化高精度识别引擎...",
+                    step=1,
+                    total=3,
+                    percent=10,
+                )
+                return
             percent = 10 + int(current_page / max(total_pages, 1) * 80)
             task_queue.update_progress(
                 task_id,
