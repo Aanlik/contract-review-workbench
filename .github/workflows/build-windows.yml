@@ -105,6 +105,13 @@ jobs:
           }
           Write-Host "Bundled OCR model cache: $modelCache"
 
+      - name: OCR smoke test packaged application
+        shell: pwsh
+        run: |
+          $sampleImage = (Resolve-Path "build\ocr-smoke\sample.png").Path
+          & "dist\contract-review\contract-review.exe" --smoke-ocr $sampleImage
+          if ($LASTEXITCODE -ne 0) { throw "Packaged application OCR smoke test failed" }
+
       - name: Setup distribution
         run: |
           New-Item -ItemType Directory -Force -Path "dist\contract-review\data\storage" | Out-Null

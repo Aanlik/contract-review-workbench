@@ -31,6 +31,7 @@ for package in [
     'onnxruntime',
     'paddle',
     'paddleocr',
+    'paddlex',
 ]:
     if find_spec(package) is None:
         continue
