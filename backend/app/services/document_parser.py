@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import tempfile
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from PIL import Image, ImageFilter, ImageOps
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -47,27 +50,33 @@ class PaddleOcrProvider:
                 "PaddleOCR is not installed. Install the OCR extra before parsing scanned contracts."
             ) from exc
 
-        if hasattr(PaddleOCR, "predict"):
-            return self._recognize_with_v3(PaddleOCR, image_path)
+        try:
+            if hasattr(PaddleOCR, "predict"):
+                return self._recognize_with_v3(PaddleOCR, image_path)
 
-        engine = self._engine or PaddleOCR(use_angle_cls=True, lang="ch")
-        self._engine = engine
-        result = engine.ocr(str(image_path), cls=True)
-        rows = result[0] if result and isinstance(result[0], list) else result
-        blocks: list[ParsedBlock] = []
-        for order_index, row in enumerate(rows or []):
-            bbox, payload = row
-            text, confidence = payload
-            blocks.append(
-                ParsedBlock(
-                    text=str(text),
-                    bbox=normalize_ocr_bbox(bbox),
-                    confidence=float(confidence),
-                    source="ocr",
-                    order_index=order_index,
+            engine = self._engine or PaddleOCR(use_angle_cls=True, lang="ch")
+            self._engine = engine
+            result = engine.ocr(str(image_path), cls=True)
+            rows = result[0] if result and isinstance(result[0], list) else result
+            blocks: list[ParsedBlock] = []
+            for order_index, row in enumerate(rows or []):
+                bbox, payload = row
+                text, confidence = payload
+                blocks.append(
+                    ParsedBlock(
+                        text=str(text),
+                        bbox=normalize_ocr_bbox(bbox),
+                        confidence=float(confidence),
+                        source="ocr",
+                        order_index=order_index,
+                    )
                 )
-            )
-        return blocks
+            return blocks
+        except RuntimeError as exc:
+            if not _is_paddle_model_configuration_error(exc):
+                raise
+            logger.warning("PaddleOCR model initialization failed; falling back to RapidOCR: %s", exc)
+            return RapidOcrProvider().recognize_page(image_path)
 
     def _recognize_with_v3(self, paddle_ocr, image_path: Path) -> list[ParsedBlock]:
         engine = self._engine
@@ -111,6 +120,11 @@ def _configure_bundled_paddle_models() -> None:
     model_dir = base_dir / "ocr-models"
     if model_dir.is_dir():
         os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(model_dir))
+
+
+def _is_paddle_model_configuration_error(error: RuntimeError) -> bool:
+    message = str(error)
+    return "json.exception.parse_error.101" in message or "attempting to parse an empty input" in message
 
 
 class RapidOcrProvider:

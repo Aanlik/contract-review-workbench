@@ -173,6 +173,32 @@ def test_paddleocr_provider_reuses_v3_engine_between_pages(tmp_path, monkeypatch
     assert calls == {"initializations": 1, "predictions": 2}
 
 
+def test_paddleocr_provider_falls_back_to_rapidocr_for_model_config_error(tmp_path, monkeypatch):
+    sample = tmp_path / "contract.png"
+    sample.write_bytes(b"fake image")
+    expected = [
+        ParsedBlock(
+            text="甲方盖章",
+            bbox=[10, 20, 100, 40],
+            confidence=0.93,
+            source="ocr",
+            order_index=0,
+        )
+    ]
+
+    class BrokenPaddleOCR:
+        def __init__(self, **_kwargs):
+            raise RuntimeError("[json.exception.parse_error.101] attempting to parse an empty input")
+
+        def predict(self, _image_path):
+            return iter([])
+
+    monkeypatch.setitem(sys.modules, "paddleocr", SimpleNamespace(PaddleOCR=BrokenPaddleOCR))
+    monkeypatch.setattr(RapidOcrProvider, "recognize_page", lambda _self, _path: expected)
+
+    assert PaddleOcrProvider().recognize_page(sample) == expected
+
+
 def test_scanned_contract_pdf_is_rendered_to_page_images_before_ocr(tmp_path):
     pdf_path = tmp_path / "scan.pdf"
     image_path = tmp_path / "page.png"

@@ -111,6 +111,8 @@ jobs:
           $sampleImage = (Resolve-Path "build\ocr-smoke\sample.png").Path
           & "dist\contract-review\contract-review.exe" --smoke-ocr $sampleImage
           if ($LASTEXITCODE -ne 0) { throw "Packaged application OCR smoke test failed" }
+          & "dist\contract-review\contract-review.exe" --smoke-rapid-ocr $sampleImage
+          if ($LASTEXITCODE -ne 0) { throw "Packaged application RapidOCR smoke test failed" }
 
       - name: Setup distribution
         run: |
