@@ -12,7 +12,7 @@ from importlib.util import find_spec
 import os
 import sys
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs, copy_metadata
 
 block_cipher = None
 spec_dir = Path(SPECPATH)
@@ -32,6 +32,13 @@ for package in [
     'paddle',
     'paddleocr',
     'paddlex',
+    # PaddleX resolves these OCR-core packages dynamically at runtime.
+    'imagesize',
+    'cv2',
+    'pyclipper',
+    'pypdfium2',
+    'bidi',
+    'shapely',
 ]:
     if find_spec(package) is None:
         continue
@@ -67,6 +74,19 @@ for package in [
     ocr_datas += package_datas
     ocr_binaries += package_binaries
     ocr_hiddenimports += package_hiddenimports
+
+# PaddleX checks extras with importlib.metadata. Preserve the package metadata
+# alongside its dynamically loaded OCR-core dependencies in the frozen app.
+for distribution in [
+    'paddlex',
+    'imagesize',
+    'opencv-contrib-python',
+    'pyclipper',
+    'pypdfium2',
+    'python-bidi',
+    'shapely',
+]:
+    ocr_datas += copy_metadata(distribution)
 
 a = Analysis(
     [str(spec_dir / 'run.py')],

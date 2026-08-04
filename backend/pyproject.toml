@@ -32,12 +32,14 @@ ocr-rapid-legacy = [
 ocr-paddle = [
   "paddlepaddle==3.3.1",
   "paddleocr==3.7.0",
+  "paddlex[ocr-core]==3.7.2",
 ]
 ocr-all = [
   "rapidocr==3.9.2",
   "onnxruntime==1.28.0",
   "paddlepaddle==3.3.1",
   "paddleocr==3.7.0",
+  "paddlex[ocr-core]==3.7.2",
 ]
 
 [tool.pytest.ini_options]
