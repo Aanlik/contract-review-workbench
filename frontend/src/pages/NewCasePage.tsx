@@ -72,10 +72,15 @@ export function NewCasePage({ onCreated }: NewCasePageProps) {
 
   function handleMatterMaterialsChange(fileList: FileList | null) {
     const selected = Array.from(fileList ?? []);
-    if (selected.length > 4) {
-      setStatus("最多上传 4 份事项签报或会议纪要。");
-    }
-    setMatterMaterials(selected.slice(0, 4));
+    setMatterMaterials((current) => {
+      const existing = new Set(current.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+      const additions = selected.filter((file) => !existing.has(`${file.name}-${file.size}-${file.lastModified}`));
+      const merged = current.concat(additions);
+      if (merged.length > 4) {
+        setStatus("最多上传 4 份事项签报或会议纪要。");
+      }
+      return merged.slice(0, 4);
+    });
   }
 
   function stopPolling() {
