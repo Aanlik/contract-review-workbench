@@ -149,6 +149,30 @@ def test_paddleocr_provider_supports_v3_predict_results(tmp_path, monkeypatch):
     ]
 
 
+def test_paddleocr_provider_reuses_v3_engine_between_pages(tmp_path, monkeypatch):
+    first_page = tmp_path / "page-1.png"
+    second_page = tmp_path / "page-2.png"
+    first_page.write_bytes(b"fake image")
+    second_page.write_bytes(b"fake image")
+    calls = {"initializations": 0, "predictions": 0}
+
+    class FakePaddleOCR:
+        def __init__(self, **_kwargs):
+            calls["initializations"] += 1
+
+        def predict(self, _image_path):
+            calls["predictions"] += 1
+            return iter([{"dt_polys": [], "rec_texts": [], "rec_scores": []}])
+
+    monkeypatch.setitem(sys.modules, "paddleocr", SimpleNamespace(PaddleOCR=FakePaddleOCR))
+
+    provider = PaddleOcrProvider()
+    provider.recognize_page(first_page)
+    provider.recognize_page(second_page)
+
+    assert calls == {"initializations": 1, "predictions": 2}
+
+
 def test_scanned_contract_pdf_is_rendered_to_page_images_before_ocr(tmp_path):
     pdf_path = tmp_path / "scan.pdf"
     image_path = tmp_path / "page.png"

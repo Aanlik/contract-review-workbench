@@ -35,6 +35,9 @@ class PdfRenderer(Protocol):
 
 
 class PaddleOcrProvider:
+    def __init__(self) -> None:
+        self._engine = None
+
     def recognize_page(self, image_path: Path) -> list[ParsedBlock]:
         _configure_bundled_paddle_models()
         try:
@@ -47,7 +50,8 @@ class PaddleOcrProvider:
         if hasattr(PaddleOCR, "predict"):
             return self._recognize_with_v3(PaddleOCR, image_path)
 
-        engine = PaddleOCR(use_angle_cls=True, lang="ch")
+        engine = self._engine or PaddleOCR(use_angle_cls=True, lang="ch")
+        self._engine = engine
         result = engine.ocr(str(image_path), cls=True)
         rows = result[0] if result and isinstance(result[0], list) else result
         blocks: list[ParsedBlock] = []
@@ -66,12 +70,15 @@ class PaddleOcrProvider:
         return blocks
 
     def _recognize_with_v3(self, paddle_ocr, image_path: Path) -> list[ParsedBlock]:
-        engine = paddle_ocr(
-            lang="ch",
-            use_textline_orientation=True,
-            device="cpu",
-            engine_config={"run_mode": "paddle"},
-        )
+        engine = self._engine
+        if engine is None:
+            engine = paddle_ocr(
+                lang="ch",
+                use_textline_orientation=True,
+                device="cpu",
+                engine_config={"run_mode": "paddle"},
+            )
+            self._engine = engine
         results = engine.predict(str(image_path))
         if isinstance(results, dict) or hasattr(results, "to_dict"):
             results = [results]
